@@ -1,0 +1,3818 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>KALAK 3PATTI</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Teko:wght@400;500;600&family=Cinzel:wght@700;800;900&display=swap');
+
+:root {
+  --felt: #1a6b35;
+  --felt-dark: #0f4020;
+  --felt-light: #1e7a3d;
+  --gold: #c8922a;
+  --gold-bright: #f0b429;
+  --gold-rim: #d4a843;
+  --cream: #f5e6c8;
+  --red-btn: #c0392b;
+  --blue-btn: #1a5fb5;
+  --orange-btn: #c87a00;
+  --purple-btn: #7b2fa0;
+  --text-light: #f0e8d0;
+  --text-dim: rgba(240,232,208,0.6);
+  --chip-shadow: 0 3px 10px rgba(0,0,0,0.6);
+  --card-shadow: 0 4px 14px rgba(0,0,0,0.7);
+  --wood-1: #2b1710;
+  --wood-2: #190d07;
+  --leather: #5a1a1a;
+  --leather-dark: #340d0d;
+  --lantern: #ffb15c;
+  --panel-glass: linear-gradient(135deg,rgba(18,12,8,0.82),rgba(12,8,5,0.62));
+}
+
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+
+html,body{
+  width:100%;height:100%;
+  font-family:'Rajdhani',sans-serif;
+  background:radial-gradient(ellipse at 50% 28%, #2a1608 0%, #150a04 46%, #060302 100%);
+  overflow:hidden;
+}
+body{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+
+/* ── GAME WRAPPER ── */
+/* Fluid, not scaled: #game fills the real viewport (capped at 430px wide so it doesn't stretch absurdly
+   on a tablet/desktop) and #table-area below is flex:1, so it simply gets whatever vertical room is left
+   over from #topbar and #action-bar on THIS device — no JS math, no shrinking the action buttons. The
+   table's own contents (seats, cards, HUD) use % positions and clamp()-based sizing so they reflow with it. */
+#game{
+  width:100%;
+  height:100%;
+  max-width:430px;
+  position:relative;
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+}
+
+/* ── TOP BAR ── */
+#topbar{
+  background:linear-gradient(180deg,#0c0a10 0%,#151020 100%);
+  border-bottom:1px solid rgba(200,146,42,0.35);
+  box-shadow:0 2px 10px rgba(0,0,0,0.5);
+  padding:7px 8px;
+  display:flex;
+  align-items:center;
+  gap:6px;
+  flex-shrink:0;
+  z-index:20;
+}
+.icon-btn{
+  width:34px;height:34px;border-radius:50%;
+  background:rgba(255,255,255,0.08);
+  border:1px solid rgba(255,255,255,0.16);
+  display:flex;align-items:center;justify-content:center;
+  font-size:0.95rem;cursor:pointer;color:#fff;position:relative;
+  flex-shrink:0;
+}
+.notif-dot{
+  position:absolute;top:2px;right:2px;
+  width:8px;height:8px;border-radius:50%;
+  background:#e74c3c;border:1px solid #111;
+}
+
+#brand-logo{
+  font-family:'Teko',sans-serif;
+  font-size:1.1rem;font-weight:600;letter-spacing:1px;
+  color:var(--cream);white-space:nowrap;
+  display:flex;align-items:baseline;gap:3px;
+  flex-shrink:1;min-width:0;overflow:hidden;text-overflow:ellipsis;
+}
+#brand-logo .brand-crown{font-size:0.85rem;color:var(--gold-bright);}
+#brand-logo em{
+  font-style:normal;
+  background:linear-gradient(180deg,#ffe6a0,var(--gold-bright) 55%,var(--gold) 100%);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+  text-shadow:0 1px 0 rgba(0,0,0,0.3);
+}
+
+#coins-display{
+  margin-left:auto;
+  background:linear-gradient(180deg,rgba(0,0,0,0.5),rgba(0,0,0,0.35));
+  border:1px solid var(--gold);
+  border-radius:20px;
+  padding:4px 10px 4px 7px;
+  display:flex;align-items:center;gap:5px;
+  flex-shrink:0;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,0.08);
+}
+#coins-icon{
+  width:20px;height:20px;border-radius:50%;
+  background:radial-gradient(circle at 35% 35%,#f0b429,#c8922a,#7a5500);
+  border:1px solid rgba(255,220,100,0.5);
+  box-shadow:0 0 8px rgba(240,180,41,0.4);
+  flex-shrink:0;
+}
+#coins-val{font-family:'Teko',sans-serif;font-size:1.05rem;font-weight:600;color:var(--gold-bright);white-space:nowrap;}
+#btn-add-coins{
+  width:22px;height:22px;border-radius:50%;
+  background:linear-gradient(135deg,#27ae60,#1e8449);
+  border:none;color:#fff;font-size:1.05rem;line-height:1;
+  cursor:pointer;display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;
+  box-shadow:0 2px 4px rgba(0,0,0,0.4);
+}
+
+/* Wallet / Leaderboard / Sound icon+label buttons */
+#topbar-tools{display:flex;align-items:center;gap:4px;flex-shrink:0;}
+.tool-btn{
+  background:none;border:none;color:#fff;
+  width:34px;
+  display:flex;flex-direction:column;align-items:center;gap:1px;
+  cursor:pointer;padding:2px 0;
+  font-family:'Rajdhani',sans-serif;
+}
+.tool-icon{
+  width:28px;height:28px;border-radius:50%;
+  background:rgba(255,255,255,0.08);
+  border:1px solid rgba(255,255,255,0.16);
+  display:flex;align-items:center;justify-content:center;
+  font-size:0.8rem;
+  flex-shrink:0;
+}
+.tool-label{
+  font-size:0.48rem;color:var(--text-dim);letter-spacing:0.1px;
+  white-space:nowrap;overflow:hidden;max-width:34px;
+}
+
+/* Floating player pod — avatar / name / level, overlaid top-left of the table */
+
+#profile-avatar{
+  width:40px;height:40px;border-radius:50%;
+  border:2px solid var(--gold-bright);
+  background:linear-gradient(135deg,#3a2a6a,#1a1a4a);
+  display:flex;align-items:center;justify-content:center;
+  font-size:1.3rem;overflow:hidden;
+  object-fit:cover;
+  box-shadow:0 0 0 2px rgba(0,0,0,0.5);
+}
+#profile-info{line-height:1.2;}
+#profile-name{font-weight:700;font-size:0.9rem;color:#fff;letter-spacing:0.3px;}
+
+/* Room info pod — mirrors the player pod on the right */
+#room-info{
+  position:absolute;top:8px;right:8px;z-index:18;
+  background:var(--panel-glass);
+  border:1px solid rgba(200,146,42,0.4);
+  border-radius:12px;
+  padding:6px 10px;
+  text-align:right;
+  font-size:0.6rem;color:var(--text-dim);line-height:1.55;
+  box-shadow:0 4px 14px rgba(0,0,0,0.5);
+}
+#room-info b{color:#fff;font-weight:600;letter-spacing:0.2px;}
+#seat-switch{cursor:pointer;user-select:none;-webkit-user-select:none;}
+#seat-switch:active{opacity:0.6;}
+#room-info .players-count{
+  display:flex;align-items:center;gap:4px;justify-content:flex-end;
+  color:var(--gold-bright);font-weight:700;
+}
+
+/* ── TABLE AREA ── */
+#table-area{
+  flex:1;
+  position:relative;
+  overflow:hidden;
+}
+
+/* room walls behind the table: warm wood, two lantern glows, vignette */
+#table-bg{
+  position:absolute;inset:0;
+  background:
+    radial-gradient(circle at 6% 58%, rgba(255,177,92,0.20) 0%, transparent 26%),
+    radial-gradient(circle at 94% 58%, rgba(255,177,92,0.20) 0%, transparent 26%),
+    radial-gradient(ellipse at 50% 48%, transparent 45%, rgba(0,0,0,0.55) 100%),
+    linear-gradient(180deg,var(--wood-1) 0%,#20120a 45%,var(--wood-2) 100%);
+}
+#table-bg::after{
+  content:'';
+  position:absolute;inset:0;
+  background-image:
+    repeating-linear-gradient(90deg, rgba(0,0,0,0.12) 0px, rgba(0,0,0,0.12) 2px, transparent 2px, transparent 34px),
+    repeating-radial-gradient(circle at 50% 45%, rgba(255,255,255,0.025) 0px, rgba(255,255,255,0.025) 1px, transparent 2px, transparent 7px);
+  mix-blend-mode:overlay;
+  pointer-events:none;
+}
+/* scalloped valance along the very top edge of the room */
+#table-area::before{
+  content:'';
+  position:absolute;top:0;left:0;right:0;height:12px;
+  background:
+    repeating-radial-gradient(circle at 12px -6px, var(--leather-dark) 0 7px, transparent 8px 24px),
+    linear-gradient(180deg,var(--leather-dark),transparent);
+  opacity:0.9;
+  z-index:3;pointer-events:none;
+}
+
+/* ── FX LAYER (flying cards / chips) ── */
+#fx-layer{
+  position:absolute;inset:0;
+  pointer-events:none;
+  z-index:45;
+  overflow:visible;
+}
+.fly-card{
+  position:absolute;
+  width:18px;height:26px;border-radius:3px;
+  background:repeating-linear-gradient(-45deg,#1a3a9c 0px,#1a3a9c 3px,#102570 3px,#102570 6px);
+  border:1px solid rgba(255,255,255,0.3);
+  box-shadow:0 2px 8px rgba(0,0,0,0.6);
+  opacity:0;
+  transform:translate(0,0) rotate(0deg);
+  transition:transform 0.38s cubic-bezier(.25,.65,.3,1),opacity 0.15s ease-out;
+}
+.fly-chip{
+  position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;
+  --chip-c:#f0940c;--chip-d:#8a4e06;
+  background:
+    radial-gradient(circle,#fbf6ea 0%,#fbf6ea 40%,transparent 42%),
+    var(--chip-c);
+  border:3px dashed rgba(255,255,255,0.88);
+  box-shadow:0 2px 0 var(--chip-d),0 4px 7px rgba(0,0,0,0.6);
+  transform:translate(0,0) scale(1);
+  opacity:1;
+  transition:transform 0.7s cubic-bezier(.22,.7,.3,1),opacity 0.7s ease-in;
+}
+.fly-chip.flying{
+  transform:translate(var(--dx),calc(var(--dy) - 26px)) scale(0.6);
+  opacity:0.2;
+}
+/* the pot label gives a little pop each time a bet lands in it, so every seat's bet is noticed */
+#pot-label.pot-hit{animation:potHit 0.38s ease-out;}
+@keyframes potHit{
+  0%{transform:scale(1);}
+  40%{transform:scale(1.13);box-shadow:0 0 16px rgba(240,200,80,0.75),0 4px 10px rgba(0,0,0,0.5);}
+  100%{transform:scale(1);}
+}
+
+/* Padded outer rail — the dark bumper between the gold trim and the room,
+   brighter along the top edge where the room's light catches it */
+#table-rail{
+  position:absolute;
+  left:50%;top:50%;
+  transform:translate(-50%,-52%);
+  width:95%;
+  height:85%;
+  border-radius:50%;
+  background:
+    radial-gradient(ellipse 78% 50% at 50% 10%, rgba(150,138,120,0.5) 0%, transparent 60%),
+    radial-gradient(ellipse 90% 70% at 50% 94%, rgba(0,0,0,0.6) 0%, transparent 55%),
+    linear-gradient(180deg,#443c33 0%,#2b261f 30%,#17130f 60%,#0a0807 100%);
+  box-shadow:
+    0 0 0 2px rgba(0,0,0,0.8),
+    0 22px 48px rgba(0,0,0,0.8),
+    inset 0 2px 3px rgba(255,255,255,0.12),
+    inset 0 -10px 22px rgba(0,0,0,0.6);
+}
+/* Oval table rim — green felt ringed by a bevelled gold trim */
+#table-rim{
+  position:absolute;
+  left:50%;top:50%;
+  transform:translate(-50%,-52%);
+  width:88%;
+  height:77%;
+  border-radius:50%;
+  background:radial-gradient(ellipse 70% 55% at 50% 34%, #1c8f47 0%, #15793d 26%, #0f6733 52%, #094e26 76%, #052f17 100%);
+  border:6px solid transparent;
+  background-clip:padding-box;
+  box-shadow:
+    0 0 0 2px #100c08,
+    0 0 0 6px #e6c567,
+    0 0 0 9px #8f6a29,
+    0 0 0 10px #0c0906,
+    0 0 46px rgba(0,0,0,0.85),
+    inset 0 0 70px rgba(0,0,0,0.35),
+    inset 0 18px 50px rgba(255,255,255,0.05);
+}
+/* faint centre watermark crest — crown + flourish + wordmark, echoing the felt-print look of a real table */
+#table-watermark{
+  position:absolute;left:50%;top:37%;transform:translate(-50%,-50%);
+  display:flex;flex-direction:column;align-items:center;
+  z-index:4;pointer-events:none;
+  color:rgba(150,255,178,0.16);
+}
+#table-watermark .wm-crest{
+  width:92px;height:auto;display:block;
+  overflow:visible;
+  margin-bottom:-2px;
+}
+#table-watermark .wm-text{
+  font-family:'Cinzel',serif;
+  font-weight:800;
+  font-size:1.3rem;
+  letter-spacing:3px;
+  line-height:1.1;
+  text-align:center;
+  white-space:nowrap;
+}
+
+/* ── POT ── */
+#pot-area{
+  position:absolute;
+  left:50%;top:48%;
+  transform:translate(-50%,-50%);
+  display:flex;flex-direction:column;align-items:center;gap:4px;
+  z-index:5;
+}
+#pot-chips-visual{
+  position:relative;
+  width:66px;height:38px;
+  margin:0 auto;
+}
+.chip-stack{
+  width:24px;height:24px;
+  position:absolute;
+}
+.chip-stack:nth-child(1){left:20px;top:10px;transform:rotate(-6deg);}
+.chip-stack:nth-child(2){left:30px;top:3px;transform:rotate(9deg);}
+.chip-stack:nth-child(3){left:10px;top:5px;transform:rotate(-16deg);}
+.chip-stack:nth-child(4){left:38px;top:12px;transform:rotate(20deg);}
+.chip-stack:nth-child(5){left:2px;top:13px;transform:rotate(-26deg);}
+.chip-stack-inner{
+  width:24px;height:24px;border-radius:50%;
+  border:3px dashed rgba(255,255,255,0.88);
+  background:
+    radial-gradient(circle at 50% 46%, #fbf6ea 0%, #fbf6ea 40%, transparent 42%),
+    var(--chip-c,#c0392b);
+  box-shadow:
+    0 2px 0 var(--chip-d,#7a1f16),
+    0 4px 0 var(--chip-d,#7a1f16),
+    0 6px 7px rgba(0,0,0,0.55);
+}
+#pot-label{
+  background:linear-gradient(180deg,rgba(10,8,6,0.85),rgba(0,0,0,0.68));
+  border:1px solid var(--gold);
+  border-radius:20px;
+  padding:3px 18px;
+  text-align:center;
+  box-shadow:0 4px 10px rgba(0,0,0,0.5);
+}
+#pot-label .pot-title{
+  font-size:0.6rem;letter-spacing:2px;
+  color:var(--text-dim);display:block;
+}
+#pot-label .pot-amount{
+  font-family:'Teko',sans-serif;
+  font-size:1.3rem;color:var(--gold-bright);
+  line-height:1;
+}
+
+/* ── SEATS ── */
+.seat{
+  position:absolute;
+  display:flex;flex-direction:column;align-items:center;gap:3px;
+  z-index:6;
+  transition:opacity 0.4s;
+  --avatar-size:clamp(40px,12vw,58px);   /* shrinks gracefully on narrow phones instead of overflowing/crowding the table */
+}
+.seat.folded{opacity:0.35;}
+
+/* a hinted chair-back sitting behind every seat, like the room's leather chairs */
+.seat::before{
+  content:'';
+  position:absolute;
+  top:2px;left:50%;
+  transform:translate(-50%,0);
+  width:calc(var(--avatar-size) * 1.21);height:calc(var(--avatar-size) * 1.345);
+  background:radial-gradient(ellipse at 50% 26%, var(--leather) 0%, var(--leather-dark) 62%, transparent 100%);
+  border-radius:46% 46% 50% 50% / 55% 55% 65% 65%;
+  opacity:0.42;
+  z-index:-1;
+  pointer-events:none;
+}
+
+.seat-avatar-wrap{
+  position:relative;
+  width:var(--avatar-size);height:var(--avatar-size);
+}
+.seat-avatar{
+  width:var(--avatar-size);height:var(--avatar-size);border-radius:50%;
+  border:3px solid #f0b429;
+  background:#1a1a3a;
+  overflow:hidden;
+  object-fit:cover;
+  object-position:center top;
+  box-shadow:0 4px 14px rgba(0,0,0,0.7),0 0 0 2px rgba(0,0,0,0.5);
+}
+.seat-avatar-wrap::after{
+  /* glossy highlight over the portrait */
+  content:'';
+  position:absolute;inset:4px;border-radius:50%;
+  background:radial-gradient(circle at 32% 24%, rgba(255,255,255,0.35), transparent 45%);
+  pointer-events:none;
+}
+.seat.active-turn .seat-avatar{
+  border-color:var(--gold-bright);
+  animation:turnPulse 1.15s ease-in-out infinite;
+}
+@keyframes turnPulse{
+  0%,100%{box-shadow:0 0 0 3px rgba(240,180,41,0.4),0 0 14px rgba(240,180,41,0.3);}
+  50%{box-shadow:0 0 0 6px rgba(240,180,41,0.65),0 0 26px rgba(240,180,41,0.55);}
+}
+.dealer-btn{
+  position:absolute;
+  bottom:0;right:-4px;
+  width:18px;height:18px;border-radius:50%;
+  background:linear-gradient(135deg,#1a5fb5,#0d3d80);
+  border:2px solid #fff;
+  color:#fff;font-size:0.55rem;font-weight:700;
+  display:flex;align-items:center;justify-content:center;
+  letter-spacing:0;
+  animation:dealerPop 0.55s cubic-bezier(.2,1.6,.4,1);
+}
+@keyframes dealerPop{
+  0%{transform:scale(0.2);opacity:0;}
+  100%{transform:scale(1);opacity:1;}
+}
+.turn-timer{
+  position:absolute;
+  bottom:-4px;left:50%;transform:translateX(-50%);
+  background:linear-gradient(135deg,#27ae60,#1e8449);
+  border:2px solid rgba(255,255,255,0.3);
+  border-radius:12px;
+  padding:1px 7px;
+  font-size:0.75rem;font-weight:700;color:#fff;
+  display:none;
+}
+.seat.active-turn .turn-timer{display:block;}
+.seat.me .turn-timer{display:none !important;} /* the countdown of whichever seat is "me" on this screen lives in the ring HUD instead */
+
+.seat-info{
+  position:relative;
+  background:linear-gradient(180deg,rgba(10,8,6,0.9),rgba(0,0,0,0.72));
+  border:1px solid rgba(200,146,42,0.4);
+  border-radius:8px;
+  padding:3px 10px;
+  text-align:center;
+  min-width:70px;
+  margin-top:-7px;
+  box-shadow:0 3px 8px rgba(0,0,0,0.5);
+}
+.seat-name{font-size:0.72rem;font-weight:600;color:#fff;letter-spacing:0.3px;}
+.seat-chips{font-family:'Teko',sans-serif;font-size:0.9rem;color:var(--gold-bright);line-height:1;}
+/* small gift badge on every opponent's name pod, echoing the table's UI chrome */
+.seat:not(.me) .seat-info::after{
+  content:'🎁';
+  position:absolute;top:-7px;right:-6px;
+  width:17px;height:17px;border-radius:50%;
+  background:linear-gradient(135deg,#ffcf5c,var(--gold));
+  border:1px solid rgba(255,255,255,0.5);
+  display:flex;align-items:center;justify-content:center;
+  font-size:0.55rem;line-height:1;
+  box-shadow:0 2px 4px rgba(0,0,0,0.55);
+}
+/* blind / seen / packed status tag — hangs off the top of each opponent's avatar,
+   so it adds no height to the seat and never disturbs the table layout */
+.seat-status{
+  position:absolute;
+  top:-9px;left:50%;transform:translateX(-50%);
+  z-index:3;white-space:nowrap;
+  padding:2px 7px;
+  border-radius:8px;
+  font-size:0.58rem;font-weight:700;letter-spacing:0.6px;line-height:1;
+  border:1px solid transparent;
+  box-shadow:0 1px 4px rgba(0,0,0,0.5);
+}
+.seat.me .seat-status{display:none;}   /* the local seat's own status is already shown by its big cards (face-down = blind, SEEN badge = seen) */
+.seat-status.blind{background:rgba(124,92,214,0.38);color:#e0d6ff;border-color:rgba(170,140,255,0.55);}
+.seat-status.seen{background:rgba(39,174,96,0.34);color:#9dffc2;border-color:rgba(70,205,125,0.6);}
+.seat-status.packed{background:rgba(192,57,43,0.34);color:#ffbdb4;border-color:rgba(225,95,75,0.55);}
+.seat-status.out{background:rgba(255,255,255,0.08);color:var(--text-dim);border-color:rgba(255,255,255,0.18);}
+
+.seat-cards{
+  display:flex;gap:2px;
+  margin-top:2px;
+}
+.card-back-sm{
+  width:18px;height:26px;
+  border-radius:3px;
+  background:repeating-linear-gradient(
+    -45deg,
+    #1a3a9c 0px,#1a3a9c 3px,
+    #102570 3px,#102570 6px
+  );
+  border:1px solid rgba(255,255,255,0.25);
+  box-shadow:0 2px 6px rgba(0,0,0,0.5);
+}
+.card-mini-face{
+  width:18px;height:26px;
+  border-radius:3px;
+  background:#fff;
+  border:1px solid #ccc;
+  display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  font-size:0.5rem;font-weight:700;
+  box-shadow:0 2px 6px rgba(0,0,0,0.5);
+  line-height:1.1;
+}
+.card-mini-face.red{color:#c0392b;}
+.card-mini-face.black{color:#111;}
+
+.seat-bet{
+  background:rgba(0,60,0,0.75);
+  border:1px solid rgba(255,255,255,0.25);
+  border-radius:10px;
+  padding:1px 8px 1px 5px;
+  font-size:0.65rem;color:#a8ffb0;font-weight:600;
+  display:inline-flex;align-items:center;gap:4px;
+  --chip-c:#f23843;--chip-d:#8a0d16;
+}
+.seat-bet::before{
+  content:'';
+  display:block;box-sizing:border-box;
+  width:15px;height:15px;min-width:15px;border-radius:50%;
+  background:
+    radial-gradient(circle at 50% 46%, #fbf6ea 0%, #fbf6ea 38%, transparent 40%),
+    var(--chip-c);
+  border:3px dashed rgba(255,255,255,0.88);
+  box-shadow:0 2px 0 var(--chip-d),0 3px 4px rgba(0,0,0,0.55);
+  flex-shrink:0;
+}
+
+/* SEAT POSITIONS — portrait 430px
+   Seats are placed by JS (placeSeats) into 8 SLOTS around the table, always relative to the seat this screen
+   controls: slot 0 (bottom centre) is always "me", then clockwise. No CSS rule is tied to a particular seat number. */
+
+/* ── PLAYER CARDS (big) ── */
+#player-cards-big{
+  position:absolute;
+  bottom:calc(13% + 110px);
+  left:50%;transform:translateX(-50%);
+  display:flex;gap:6px;
+  z-index:7;
+}
+.play-card-big{
+  width:56px;height:80px;
+  border-radius:8px;
+  background:#fff;
+  border:2px solid #e0e0e0;
+  display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  box-shadow:var(--card-shadow);
+  cursor:pointer;
+  transition:transform 0.2s;
+  position:relative;
+}
+.play-card-big:active{transform:translateY(-4px);}
+.play-card-big.flip-in{animation:flipReveal 0.42s ease;}
+@keyframes flipReveal{
+  0%{transform:rotateY(90deg) scale(0.9);}
+  60%{transform:rotateY(0deg) scale(1.04);}
+  100%{transform:rotateY(0deg) scale(1);}
+}
+.play-card-big.deal-in{animation:dealPop 0.3s ease;}
+@keyframes dealPop{
+  0%{transform:translateY(-14px) scale(0.85);opacity:0;}
+  100%{transform:translateY(0) scale(1);opacity:1;}
+}
+.play-card-big .big-rank{font-size:1.4rem;font-weight:700;line-height:1;}
+.play-card-big .big-suit{font-size:1.1rem;line-height:1;}
+.play-card-big.red{color:#c0392b;}
+.play-card-big.black{color:#111;}
+.play-card-big.blind-card{
+  background:repeating-linear-gradient(
+    -45deg,
+    #1a3a9c 0px,#1a3a9c 4px,
+    #102570 4px,#102570 8px
+  );
+  border-color:rgba(255,255,255,0.2);
+  cursor:default;
+}
+.seen-badge{
+  position:absolute;top:-8px;left:50%;transform:translateX(-50%);
+  background:#27ae60;color:#fff;
+  font-size:0.5rem;font-weight:700;letter-spacing:1px;
+  padding:1px 5px;border-radius:4px;
+}
+
+/* ── YOUR TURN HUD — a countdown ring, like a pit-boss shot clock ── */
+#your-turn-hud{
+  position:absolute;
+  right:8px;bottom:8px;      /* extreme bottom-right corner of the table, flush against the action bar's top edge */
+  display:none;
+  flex-direction:column;align-items:center;gap:4px;
+  z-index:8;
+}
+#your-turn-hud.show{display:flex;}
+#turn-ring-wrap{
+  position:relative;width:clamp(48px,14vw,62px);height:clamp(48px,14vw,62px);
+  filter:drop-shadow(0 4px 10px rgba(0,0,0,0.6));
+}
+#turn-ring-svg{width:clamp(48px,14vw,62px);height:clamp(48px,14vw,62px);transform:rotate(-90deg);}
+.ring-track{fill:none;stroke:rgba(255,255,255,0.15);stroke-width:5;}
+.ring-fill{
+  fill:none;stroke:#2ecc71;stroke-width:5;stroke-linecap:round;
+  stroke-dasharray:163.36;stroke-dashoffset:0;
+  transition:stroke-dashoffset 1s linear,stroke 0.3s;
+}
+#turn-ring-wrap.low .ring-fill{stroke:#e74c3c;}
+#ring-seconds{
+  position:absolute;inset:0;
+  display:flex;align-items:center;justify-content:center;
+  font-family:'Teko',sans-serif;font-size:1.5rem;color:#fff;
+}
+#hud-label{font-size:0.62rem;color:#2ecc71;letter-spacing:1.5px;font-weight:700;}
+
+/* the blind/call amount used to sit under the ring HUD — pinned to the table's extreme bottom-left corner, mirroring the ring HUD */
+#hud-call-amt{
+  position:absolute;
+  left:8px;bottom:8px;
+  display:none;
+  font-family:'Teko',sans-serif;font-size:0.95rem;color:#fff;
+  background:rgba(0,0,0,0.7);border:1px solid var(--gold);
+  border-radius:10px;padding:3px 12px;
+  z-index:8;
+}
+#hud-call-amt.show{display:block;}
+
+/* ── ACTION BUTTONS ── */
+#action-bar{
+  background:linear-gradient(180deg,#0b0a0d,#141118);
+  border-top:1px solid rgba(200,146,42,0.3);
+  box-shadow:0 -2px 10px rgba(0,0,0,0.5);
+  padding:10px 6px;
+  padding-bottom:calc(10px + env(safe-area-inset-bottom,0px));
+  display:grid;
+  grid-template-columns:repeat(6,1fr);
+  gap:6px;
+  flex-shrink:0;
+  z-index:10;
+}
+
+.action-btn{
+  border:none;border-radius:14px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  padding:9px 2px 8px;
+  cursor:pointer;
+  font-family:'Rajdhani',sans-serif;
+  font-weight:700;
+  transition:transform 0.1s,filter 0.1s;
+  box-shadow:0 4px 0 rgba(0,0,0,0.4),inset 0 1px 0 rgba(255,255,255,0.25);
+  min-height:60px;
+  position:relative;
+  overflow:hidden;
+}
+.action-btn::before{
+  content:'';
+  position:absolute;inset:0;
+  background:linear-gradient(180deg,rgba(255,255,255,0.22),transparent 55%);
+  pointer-events:none;
+}
+.action-btn:active{transform:translateY(2px);box-shadow:0 2px 0 rgba(0,0,0,0.4),inset 0 1px 0 rgba(255,255,255,0.2);}
+.action-btn:disabled{opacity:0.32;pointer-events:none;filter:saturate(0.6);}
+
+.btn-icon{font-size:1.25rem;line-height:1;margin-bottom:3px;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.5));}
+.btn-label{font-size:0.66rem;letter-spacing:0.4px;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,0.4);}
+.btn-mult{font-family:'Teko',sans-serif;font-weight:600;font-size:1.35rem;color:#fff;letter-spacing:0.5px;}
+.btn-sub{font-size:0.62rem;color:rgba(255,255,255,0.78);margin-top:1px;}
+
+#btn-pack{background:linear-gradient(180deg,#eb5747,#b8291a);}
+#btn-see{background:linear-gradient(180deg,#1cb597,#0e7a67);}
+#btn-blind{background:linear-gradient(180deg,#3a8fd6,#1a5fb5);}
+#btn-chaal{background:linear-gradient(180deg,#f0922e,#c87a00);}
+#btn-raise{background:linear-gradient(180deg,#ecb932,#a87b00);}
+#btn-show{background:linear-gradient(180deg,#a755c9,#6c3483);}
+#btn-sideshow{background:linear-gradient(180deg,#1cb597,#0e7a67);grid-column:1 / -1;min-height:40px;}
+
+/* ── MESSAGE LOG ── */
+#msg-bar{
+  position:absolute;
+  top:8px;left:8px;
+  max-width:55%;
+  text-align:left;
+  background:var(--panel-glass);
+  border:1px solid rgba(200,146,42,0.45);
+  border-radius:20px;
+  padding:6px 14px;
+  font-size:0.7rem;
+  color:var(--text-dim);
+  z-index:18;
+  pointer-events:none;
+  min-height:20px;
+  box-shadow:0 4px 14px rgba(0,0,0,0.55),inset 0 1px 0 rgba(255,255,255,0.06);
+}
+#msg-text{color:var(--gold-bright);font-weight:600;}
+
+/* ── HAND NAME ── */
+#hand-name-display{
+  position:absolute;
+  /* your own seat (slot 0) is anchored bottom:9%, so its avatar/name/small-cards stack sits ABOVE that
+     line — this leaves the strip below it, down to the action bar, empty. Put the tag there, centred
+     under your seat, instead of near the big cards in the middle of the table. */
+  bottom:8px;
+  left:50%;
+  transform:translateX(-50%);
+  background:rgba(0,0,0,0.7);
+  border:1px solid rgba(240,180,41,0.3);
+  border-radius:8px;
+  padding:4px 10px;
+  font-family:'Teko',sans-serif;
+  font-size:0.95rem;
+  color:var(--gold-bright);
+  letter-spacing:1px;
+  white-space:nowrap;
+  z-index:8;
+  display:none;
+}
+
+/* ── WINNER OVERLAY ── */
+#winner-overlay{
+  display:none;
+  position:absolute;inset:0;
+  background:rgba(0,0,0,0.75);
+  z-index:50;
+  align-items:center;justify-content:center;
+}
+#winner-overlay.show{display:flex;}
+#winner-box{
+  background:linear-gradient(135deg,#241408,#150c05);
+  border:2px solid var(--gold-bright);
+  border-radius:18px;
+  padding:28px 24px;
+  text-align:center;
+  width:82%;
+  box-shadow:0 0 50px rgba(240,180,41,0.3);
+}
+#winner-box h2{
+  font-family:'Teko',sans-serif;
+  font-size:1.6rem;color:var(--gold-bright);
+  margin-bottom:4px;
+}
+#winner-box .w-hand{
+  font-size:0.85rem;color:var(--cream);
+  margin-bottom:16px;
+}
+#winner-cards{
+  display:flex;gap:8px;justify-content:center;
+  margin-bottom:14px;
+}
+#w-dealer-note{
+  display:flex;align-items:center;justify-content:center;gap:6px;
+  font-size:0.8rem;color:var(--text-dim);
+  margin-bottom:16px;
+}
+#w-dealer-note .d-badge{
+  width:16px;height:16px;border-radius:50%;
+  background:linear-gradient(135deg,#1a5fb5,#0d3d80);
+  border:2px solid #fff;color:#fff;
+  font-size:0.5rem;font-weight:700;
+  display:inline-flex;align-items:center;justify-content:center;
+}
+.winner-card{
+  width:50px;height:72px;
+  border-radius:7px;background:#fff;
+  border:2px solid #ddd;
+  display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  font-size:1.1rem;font-weight:700;
+  box-shadow:0 4px 12px rgba(0,0,0,0.5);
+}
+.winner-card.red{color:#c0392b;}
+.winner-card.black{color:#111;}
+/* face-down card in the result box (winner took the pot without a showdown) */
+.winner-card.back{
+  background:repeating-linear-gradient(
+    -45deg,
+    #1a3a9c 0px,#1a3a9c 4px,
+    #102570 4px,#102570 8px
+  );
+  border-color:rgba(255,255,255,0.25);
+}
+/* showdown: the loser's hand, shown under the winner's */
+#loser-list{margin-bottom:14px;}
+#loser-list:empty{display:none;}
+.loser-row{
+  padding-top:12px;margin-top:2px;
+  border-top:1px solid rgba(240,180,41,0.25);
+}
+.loser-row .l-name{
+  font-family:'Teko',sans-serif;
+  font-size:1.15rem;color:var(--text-dim);
+  line-height:1.1;
+}
+#winner-box .loser-row .w-hand{margin-bottom:10px;}
+.loser-row .loser-cards{
+  display:flex;gap:8px;justify-content:center;
+  opacity:0.9;
+}
+#btn-ss-continue{
+  background:linear-gradient(135deg,#8e44ad,#2980b9);
+  border:none;border-radius:12px;
+  color:#fff;font-family:'Teko',sans-serif;
+  font-size:1.2rem;font-weight:600;letter-spacing:1px;
+  padding:12px 32px;cursor:pointer;
+  box-shadow:0 4px 14px rgba(0,0,0,0.4);
+}
+
+/* next-round countdown — not a button: it only counts down and then the round starts by itself */
+#next-round-count{
+  display:flex;flex-direction:column;align-items:center;gap:9px;
+  font-family:'Teko',sans-serif;font-size:1.25rem;font-weight:600;letter-spacing:1px;line-height:1;
+  color:var(--cream);
+  pointer-events:none;user-select:none;-webkit-user-select:none;
+}
+#nr-bar{width:72%;height:4px;border-radius:2px;background:rgba(255,255,255,0.14);overflow:hidden;}
+#nr-bar-fill{display:block;height:100%;width:100%;background:linear-gradient(90deg,#8e44ad,#2980b9);transform-origin:left center;}
+@keyframes nrDrain{from{transform:scaleX(1);}to{transform:scaleX(0);}}
+
+/* ── SIDESHOW REVEAL ── */
+#sideshow-overlay{
+  display:none;
+  position:absolute;inset:0;
+  background:rgba(0,0,0,0.78);
+  z-index:55;
+  align-items:center;justify-content:center;
+}
+#sideshow-overlay.show{display:flex;}
+#ss-box{
+  background:linear-gradient(135deg,#241408,#150c05);
+  border:2px solid var(--gold-bright);
+  border-radius:18px;
+  padding:16px 14px 18px;
+  text-align:center;
+  width:86%;
+  box-shadow:0 0 50px rgba(240,180,41,0.3);
+}
+#ss-title{
+  font-family:'Teko',sans-serif;
+  font-size:1.5rem;line-height:1;letter-spacing:1px;
+  color:var(--gold-bright);
+  margin-bottom:10px;
+}
+.ss-row{display:flex;flex-direction:column;align-items:center;gap:6px;}
+.ss-who{font-size:0.82rem;font-weight:600;color:var(--cream);}
+.ss-who .ss-hand{
+  margin-left:6px;
+  font-family:'Teko',sans-serif;font-size:1rem;letter-spacing:1px;
+  color:var(--gold-bright);
+}
+.ss-cards{display:flex;gap:8px;justify-content:center;}
+.ss-cards .winner-card{animation:flipReveal 0.45s ease;}
+.ss-row.win .winner-card{border-color:var(--gold-bright);box-shadow:0 0 14px rgba(240,180,41,0.65);}
+.ss-vs{font-size:0.7rem;letter-spacing:1px;color:var(--text-dim);margin:8px 0;}
+#ss-result{font-family:'Teko',sans-serif;font-size:1.3rem;line-height:1.1;margin:14px 0 12px;}
+#ss-result.win{color:#7dff9f;}
+#ss-result.lose{color:#ff8a7a;}
+
+/* ── SIDESHOW REQUEST (asked player can ACCEPT / DENY; lapses after a few seconds) ── */
+#ssreq-overlay{
+  display:none;
+  position:absolute;inset:0;
+  background:rgba(0,0,0,0.6);
+  z-index:56;
+  align-items:center;justify-content:center;
+}
+#ssreq-overlay.show{display:flex;}
+#ssreq-box{
+  background:linear-gradient(135deg,#241408,#150c05);
+  border:2px solid var(--gold-bright);
+  border-radius:18px;
+  padding:16px 16px 14px;
+  text-align:center;
+  width:82%;
+  box-shadow:0 0 50px rgba(240,180,41,0.3);
+}
+#ssq-title{
+  font-family:'Teko',sans-serif;
+  font-size:1.5rem;line-height:1;letter-spacing:1px;
+  color:var(--gold-bright);
+  margin-bottom:8px;
+}
+#ssq-text{font-size:0.95rem;font-weight:600;color:var(--cream);line-height:1.3;}
+#ssq-sub{font-size:0.72rem;color:var(--text-dim);margin-top:6px;line-height:1.35;}
+#ssq-btns{display:flex;gap:10px;margin-top:14px;}
+#ssq-btns button{
+  flex:1;border:none;border-radius:12px;padding:9px 0;
+  font-family:'Teko',sans-serif;font-size:1.3rem;font-weight:600;letter-spacing:1px;
+  color:#fff;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,0.4);
+}
+#btn-ssq-accept{background:linear-gradient(180deg,#2ecc71,#1a8a4a);}
+#btn-ssq-deny{background:linear-gradient(180deg,#e74c3c,#a5281b);}
+#ssq-btns button:active{transform:scale(0.97);}
+#ssreq-box.waiting #ssq-btns{display:none;}
+#ssq-bar{height:4px;border-radius:2px;background:rgba(255,255,255,0.14);overflow:hidden;margin-top:14px;}
+#ssreq-box.waiting #ssq-bar{margin-top:12px;}
+#ssq-bar-fill{display:block;height:100%;width:100%;background:linear-gradient(90deg,#f0b429,#e74c3c);transform-origin:left center;}
+#ssq-timer{font-family:'Teko',sans-serif;font-size:1rem;letter-spacing:1px;color:var(--text-dim);margin-top:5px;line-height:1;}
+#ssq-timer b{color:var(--gold-bright);font-weight:600;}
+
+/* ── GAME OVER: one player left holding chips ── */
+#king-overlay{
+  display:none;
+  position:absolute;inset:0;
+  background:rgba(0,0,0,0.82);
+  z-index:60;
+  align-items:center;justify-content:center;
+}
+#king-overlay.show{display:flex;}
+#king-box{
+  background:linear-gradient(135deg,#241408,#150c05);
+  border:2px solid var(--gold-bright);
+  border-radius:18px;
+  padding:26px 22px 24px;
+  text-align:center;
+  width:84%;
+  box-shadow:0 0 60px rgba(240,180,41,0.45);
+  animation:kingPop 0.6s cubic-bezier(.2,1.3,.4,1);
+}
+@keyframes kingPop{from{transform:scale(0.6);opacity:0;}to{transform:scale(1);opacity:1;}}
+#king-crown{font-size:3.2rem;line-height:1;filter:drop-shadow(0 0 14px rgba(240,180,41,0.7));}
+#king-title{
+  font-family:'Teko',sans-serif;
+  font-size:1rem;letter-spacing:4px;color:var(--text-dim);
+  margin:8px 0 10px;line-height:1;
+}
+#king-text{
+  font-family:'Teko',sans-serif;
+  font-size:1.7rem;line-height:1.15;letter-spacing:0.5px;
+  color:var(--cream);
+}
+#king-text b{color:var(--gold-bright);font-weight:600;}
+#king-sub{font-size:0.8rem;color:var(--text-dim);margin-top:12px;}
+#king-exit{                           /* "Exiting the table in 10…" — counts down, then sends everyone back to the main menu */
+  display:flex;flex-direction:column;align-items:center;gap:9px;
+  margin-top:16px;
+  font-family:'Teko',sans-serif;font-size:1.25rem;font-weight:600;letter-spacing:1px;line-height:1;
+  color:var(--cream);
+  pointer-events:none;user-select:none;-webkit-user-select:none;
+}
+#king-bar{width:72%;height:4px;border-radius:2px;background:rgba(255,255,255,0.14);overflow:hidden;}
+#king-bar-fill{display:block;height:100%;width:100%;background:linear-gradient(90deg,#c8922a,#f0b429);transform-origin:left center;}
+
+/* ── OPTIONS MENU (☰ top-left) ── */
+#btn-menu{cursor:pointer;transition:background 0.15s,border-color 0.15s,color 0.15s,transform 0.1s;}
+#btn-menu:active{transform:scale(0.92);}
+#btn-menu.open{background:rgba(240,180,41,0.18);border-color:var(--gold-bright);color:var(--gold-bright);}
+#menu-backdrop{                       /* tap anywhere outside the panel to close it */
+  display:none;position:absolute;inset:0;
+  background:rgba(0,0,0,0.38);
+  z-index:70;
+}
+#menu-backdrop.show{display:block;}
+#menu-panel{                          /* sits above every table overlay (winner / sideshow / game over) so it is always reachable */
+  display:none;position:absolute;left:8px;top:54px;
+  width:min(270px,calc(100% - 16px));
+  background:linear-gradient(135deg,#241408,#150c05);
+  border:1px solid var(--gold);
+  border-radius:14px;
+  padding:8px 8px 10px;
+  box-shadow:0 10px 30px rgba(0,0,0,0.7),0 0 24px rgba(240,180,41,0.18);
+  z-index:71;
+}
+#menu-panel.show{display:block;animation:menuDrop 0.16s ease-out;}
+@keyframes menuDrop{from{opacity:0;transform:translateY(-6px) scale(0.97);}to{opacity:1;transform:none;}}
+#menu-title{
+  font-family:'Teko',sans-serif;
+  font-size:0.85rem;letter-spacing:3px;color:var(--text-dim);
+  padding:0 6px 2px;line-height:1.4;
+}
+.menu-item{
+  width:100%;
+  display:flex;align-items:center;gap:12px;
+  margin-top:6px;padding:10px 12px;
+  background:rgba(255,255,255,0.05);
+  border:1px solid rgba(255,255,255,0.09);
+  border-radius:10px;
+  color:var(--cream);text-align:left;cursor:pointer;
+  font-family:'Rajdhani',sans-serif;
+}
+.menu-item:active:not(:disabled){background:rgba(240,180,41,0.18);border-color:rgba(240,180,41,0.5);}
+.menu-item:disabled{opacity:0.4;cursor:default;}
+.mi-icon{font-size:1.3rem;width:26px;text-align:center;flex-shrink:0;line-height:1;}
+.mi-text b{display:block;font-size:0.95rem;font-weight:700;letter-spacing:0.5px;color:#fff;line-height:1.15;}
+.mi-text small{display:block;font-size:0.66rem;color:var(--text-dim);line-height:1.25;margin-top:2px;}
+.menu-item.danger .mi-text b{color:#ff9a8c;}
+
+/* a seat that stood up: still in the room (watching), but out of the game */
+.seat.standing{opacity:0.3;filter:grayscale(1);}
+#spectator-note{                      /* replaces the action buttons while YOU are watching */
+  display:none;grid-column:1 / -1;
+  min-height:60px;
+  align-items:center;justify-content:center;gap:10px;
+  text-align:center;
+  font-size:0.78rem;color:var(--text-dim);letter-spacing:0.4px;line-height:1.3;
+}
+#spectator-note .sn-eye{font-size:1.4rem;}
+#spectator-note b{display:block;font-family:'Teko',sans-serif;font-size:1.05rem;letter-spacing:2px;color:var(--gold-bright);font-weight:600;line-height:1.1;}
+#action-bar.spectating .action-btn{display:none !important;}
+#action-bar.spectating #spectator-note{display:flex;}
+
+/* ── START OVERLAY ── */
+#start-overlay{
+  position:absolute;inset:0;
+  background:radial-gradient(ellipse at 50% 40%,#2a1608 0%,#150a04 55%,#070302 100%);
+  z-index:100;
+  display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  gap:16px;
+}
+#start-logo{
+  font-family:'Teko',sans-serif;
+  font-size:3rem;font-weight:600;
+  color:var(--gold-bright);
+  text-shadow:0 0 30px rgba(240,180,41,0.5);
+  letter-spacing:4px;
+  line-height:1;
+}
+#start-logo span{color:var(--cream);}
+#btn-start{
+  background:linear-gradient(135deg,#c8922a,#f0b429);
+  border:none;border-radius:14px;
+  color:#1a0a00;font-family:'Teko',sans-serif;
+  font-size:1.3rem;font-weight:700;letter-spacing:2px;
+  padding:14px 40px;cursor:pointer;
+  box-shadow:0 6px 20px rgba(200,146,42,0.5);
+  margin-top:8px;
+}
+.start-menu-btn{                      /* secondary main-menu buttons — JOIN TOURNAMENT / ADMIN PANEL */
+  display:flex;align-items:center;justify-content:center;gap:9px;
+  background:rgba(255,255,255,0.05);
+  border:1.5px solid var(--gold);border-radius:14px;
+  color:var(--cream);font-family:'Teko',sans-serif;
+  font-size:1.1rem;font-weight:600;letter-spacing:1.5px;
+  padding:11px 40px;cursor:pointer;
+  min-width:220px;
+}
+.start-menu-btn:active{background:rgba(240,180,41,0.18);border-color:var(--gold-bright);transform:scale(0.98);}
+.start-menu-btn .smb-icon{font-size:1.05rem;line-height:1;}
+
+/* ── COMING SOON (placeholder for menu items not built yet) ── */
+#soon-overlay{
+  display:none;position:absolute;inset:0;
+  background:rgba(0,0,0,0.6);
+  z-index:110;
+  align-items:center;justify-content:center;
+}
+#soon-overlay.show{display:flex;}
+#soon-box{
+  background:linear-gradient(135deg,#241408,#150c05);
+  border:2px solid var(--gold-bright);
+  border-radius:18px;
+  padding:22px 20px 20px;
+  text-align:center;
+  width:78%;
+  box-shadow:0 0 50px rgba(240,180,41,0.3);
+}
+#soon-title{
+  font-family:'Teko',sans-serif;
+  font-size:1rem;letter-spacing:4px;color:var(--text-dim);
+  margin-bottom:6px;line-height:1;
+}
+#soon-text{
+  font-family:'Teko',sans-serif;
+  font-size:1.6rem;letter-spacing:1px;color:var(--gold-bright);line-height:1.15;
+}
+#soon-sub{font-size:0.8rem;color:var(--text-dim);margin-top:8px;line-height:1.35;}
+#btn-soon-close{
+  margin-top:16px;border:none;border-radius:12px;padding:9px 34px;
+  font-family:'Teko',sans-serif;font-size:1.2rem;font-weight:600;letter-spacing:1px;
+  color:#1a0a00;background:linear-gradient(135deg,#c8922a,#f0b429);cursor:pointer;
+}
+#btn-soon-close:active{transform:scale(0.97);}
+
+/* ── ADMIN PANEL — password gate ── */
+#admin-pass-overlay{
+  display:none;position:absolute;inset:0;
+  background:rgba(0,0,0,0.65);
+  z-index:111;
+  align-items:center;justify-content:center;
+}
+#admin-pass-overlay.show{display:flex;}
+#admin-pass-box{
+  background:linear-gradient(135deg,#241408,#150c05);
+  border:2px solid var(--gold-bright);
+  border-radius:18px;
+  padding:22px 20px 20px;
+  text-align:center;
+  width:78%;
+  box-shadow:0 0 50px rgba(240,180,41,0.3);
+}
+#admin-pass-title{
+  font-family:'Teko',sans-serif;
+  font-size:1.5rem;letter-spacing:1px;color:var(--gold-bright);
+  margin-bottom:4px;line-height:1;
+}
+#admin-pass-sub{font-size:0.8rem;color:var(--text-dim);margin-bottom:14px;line-height:1.35;}
+#admin-pass-input{
+  width:100%;box-sizing:border-box;
+  background:rgba(255,255,255,0.06);
+  border:1.5px solid rgba(255,255,255,0.15);
+  border-radius:10px;
+  padding:10px 12px;
+  font-family:'Rajdhani',sans-serif;font-size:1rem;letter-spacing:1px;
+  color:var(--cream);text-align:center;
+}
+#admin-pass-input:focus{outline:none;border-color:var(--gold-bright);}
+#admin-pass-error{
+  display:none;
+  font-size:0.75rem;color:#ff9a8c;margin-top:8px;line-height:1.3;
+}
+#admin-pass-btns{display:flex;gap:10px;margin-top:14px;}
+#admin-pass-btns button{
+  flex:1;border:none;border-radius:12px;padding:9px 0;
+  font-family:'Teko',sans-serif;font-size:1.2rem;font-weight:600;letter-spacing:1px;
+  cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,0.4);
+}
+#btn-admin-pass-cancel{background:rgba(255,255,255,0.08);color:var(--cream);}
+#btn-admin-pass-submit{background:linear-gradient(135deg,#c8922a,#f0b429);color:#1a0a00;}
+#admin-pass-btns button:active{transform:scale(0.97);}
+
+/* ── JOIN TOURNAMENT — password gate (finds which seat/observer slot the password belongs to) ── */
+#join-pass-overlay{
+  display:none;position:absolute;inset:0;
+  background:rgba(0,0,0,0.65);
+  z-index:111;
+  align-items:center;justify-content:center;
+}
+#join-pass-overlay.show{display:flex;}
+#join-pass-box{
+  background:linear-gradient(135deg,#241408,#150c05);
+  border:2px solid var(--gold-bright);
+  border-radius:18px;
+  padding:22px 20px 20px;
+  text-align:center;
+  width:78%;
+  box-shadow:0 0 50px rgba(240,180,41,0.3);
+}
+#join-pass-title{
+  font-family:'Teko',sans-serif;
+  font-size:1.5rem;letter-spacing:1px;color:var(--gold-bright);
+  margin-bottom:4px;line-height:1;
+}
+#join-pass-sub{font-size:0.8rem;color:var(--text-dim);margin-bottom:14px;line-height:1.35;}
+#join-pass-input{
+  width:100%;box-sizing:border-box;
+  background:rgba(255,255,255,0.06);
+  border:1.5px solid rgba(255,255,255,0.15);
+  border-radius:10px;
+  padding:10px 12px;
+  font-family:'Rajdhani',sans-serif;font-size:1rem;letter-spacing:1px;
+  color:var(--cream);text-align:center;
+}
+#join-pass-input:focus{outline:none;border-color:var(--gold-bright);}
+#join-pass-error{
+  display:none;
+  font-size:0.75rem;color:#ff9a8c;margin-top:8px;line-height:1.3;
+}
+#join-pass-btns{display:flex;gap:10px;margin-top:14px;}
+#join-pass-btns button{
+  flex:1;border:none;border-radius:12px;padding:9px 0;
+  font-family:'Teko',sans-serif;font-size:1.2rem;font-weight:600;letter-spacing:1px;
+  cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,0.4);
+}
+#btn-join-pass-cancel{background:rgba(255,255,255,0.08);color:var(--cream);}
+#btn-join-pass-submit{background:linear-gradient(135deg,#c8922a,#f0b429);color:#1a0a00;}
+#join-pass-btns button:active{transform:scale(0.97);}
+
+/* ── JOIN TOURNAMENT — seated/observer holding screen (shown once the password matches; a placeholder
+   until real match-start networking is wired in — see openJoinTournament) ── */
+#join-seated-overlay{
+  display:none;position:absolute;inset:0;
+  background:rgba(0,0,0,0.65);
+  z-index:111;
+  align-items:center;justify-content:center;
+}
+#join-seated-overlay.show{display:flex;}
+#join-seated-box{
+  background:linear-gradient(135deg,#241408,#150c05);
+  border:2px solid var(--gold-bright);
+  border-radius:18px;
+  padding:22px 20px 20px;
+  text-align:center;
+  width:82%;
+  box-shadow:0 0 50px rgba(240,180,41,0.3);
+}
+#join-seated-title{
+  font-family:'Teko',sans-serif;
+  font-size:1.6rem;letter-spacing:2px;color:var(--gold-bright);
+  margin-bottom:4px;line-height:1;
+}
+#join-seated-sub{font-size:0.95rem;color:var(--cream);margin-bottom:12px;line-height:1.3;}
+#join-seated-details{
+  text-align:left;font-size:0.8rem;color:var(--text-dim);line-height:1.7;
+  background:rgba(255,255,255,0.05);border-radius:10px;padding:10px 12px;
+}
+#join-seated-details b{color:var(--cream);}
+#join-seated-details .join-waiting-note{margin-top:6px;color:var(--gold-bright);font-style:italic;}
+#btn-join-seated-leave{
+  margin-top:16px;border:none;border-radius:12px;padding:9px 34px;
+  font-family:'Teko',sans-serif;font-size:1.2rem;font-weight:600;letter-spacing:1px;
+  color:var(--cream);background:rgba(255,255,255,0.08);cursor:pointer;
+  box-shadow:0 4px 14px rgba(0,0,0,0.4);
+}
+#btn-join-seated-leave:active{transform:scale(0.97);}
+
+/* ── ADMIN PANEL — main view (shown once the password is accepted) ── */
+#admin-panel-overlay{
+  display:none;position:absolute;inset:0;
+  background:rgba(0,0,0,0.65);
+  z-index:111;
+  align-items:center;justify-content:center;
+}
+#admin-panel-overlay.show{display:flex;}
+#admin-panel-box{
+  background:linear-gradient(135deg,#241408,#150c05);
+  border:2px solid var(--gold-bright);
+  border-radius:18px;
+  padding:20px;
+  text-align:center;
+  width:86%;max-width:420px;max-height:80vh;
+  display:flex;flex-direction:column;
+  box-shadow:0 0 50px rgba(240,180,41,0.3);
+}
+#admin-panel-title{
+  font-family:'Teko',sans-serif;
+  font-size:1.6rem;letter-spacing:2px;color:var(--gold-bright);
+  margin-bottom:12px;line-height:1;
+}
+#admin-panel-body{
+  flex:1;min-height:0;overflow-y:auto;
+  font-size:0.85rem;color:var(--text-dim);
+  text-align:left;
+}
+#btn-admin-panel-close{
+  margin-top:16px;border:none;border-radius:12px;padding:9px 0;
+  font-family:'Teko',sans-serif;font-size:1.2rem;font-weight:600;letter-spacing:1px;
+  color:var(--cream);background:rgba(255,255,255,0.08);cursor:pointer;
+}
+#btn-admin-panel-close:active{transform:scale(0.97);}
+
+/* ── CREATE TABLE — form inside the admin panel ── */
+#btn-ct-back{
+  display:block;margin-bottom:12px;
+  background:none;border:none;padding:0;
+  font-family:'Rajdhani',sans-serif;font-size:0.85rem;font-weight:600;letter-spacing:0.5px;
+  color:var(--gold-bright);cursor:pointer;
+}
+.ap-section-title{
+  font-family:'Teko',sans-serif;
+  font-size:0.85rem;letter-spacing:3px;color:var(--text-dim);
+  margin:16px 0 6px;
+}
+.ap-section-title:first-of-type{margin-top:0;}
+.ap-field{display:flex;flex-direction:column;gap:4px;margin-bottom:8px;}
+.ap-field label{font-size:0.72rem;color:var(--text-dim);letter-spacing:0.3px;}
+.ap-input,.ap-select{
+  background:rgba(255,255,255,0.06);
+  border:1.5px solid rgba(255,255,255,0.15);
+  border-radius:8px;
+  padding:8px 10px;
+  font-family:'Rajdhani',sans-serif;font-size:0.95rem;font-weight:600;
+  color:var(--cream);
+  width:100%;box-sizing:border-box;
+}
+.ap-input:focus,.ap-select:focus{outline:none;border-color:var(--gold-bright);}
+.ap-input:disabled{opacity:0.4;cursor:not-allowed;}
+.ap-hint{font-size:0.66rem;color:var(--text-dim);opacity:0.8;line-height:1.3;}
+.ct-pw-note{display:none;color:var(--gold-bright);opacity:1;margin-top:3px;}
+.ct-pw-note.show{display:block;}
+#ct-status{
+  display:none;
+  margin-top:12px;padding:8px 10px;
+  background:rgba(46,204,113,0.15);border:1px solid rgba(46,204,113,0.5);
+  border-radius:10px;
+  font-size:0.78rem;color:#7be3a3;text-align:center;
+}
+#ct-status.show{display:block;}
+#ct-actions{display:flex;gap:10px;margin-top:16px;}
+#ct-actions button{
+  flex:1;border:none;border-radius:12px;padding:10px 0;
+  font-family:'Teko',sans-serif;font-size:1.1rem;font-weight:600;letter-spacing:1px;
+  cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,0.4);
+}
+#btn-ct-reset{background:rgba(255,255,255,0.08);color:var(--cream);}
+#btn-ct-confirm{background:linear-gradient(135deg,#c8922a,#f0b429);color:#1a0a00;}
+#ct-actions button:active{transform:scale(0.97);}
+
+/* SEEN indicator ring */
+.seen-ring{
+  position:absolute;inset:-3px;
+  border-radius:50%;
+  border:2px solid #27ae60;
+  pointer-events:none;
+}
+</style>
+</head>
+<body>
+
+<div id="game">
+
+  <!-- TOP BAR -->
+  <div id="topbar">
+    <div class="icon-btn" id="btn-menu" role="button" tabindex="0" aria-label="Table options" aria-haspopup="true" aria-expanded="false" onclick="toggleMenu()">☰</div>
+    <div id="brand-logo"><span class="brand-crown">♛</span>KALAK <em>3PATTI</em></div>
+    <div id="coins-display">
+      <div id="coins-icon"></div>
+      <div id="coins-val">5,000</div>
+      <button id="btn-add-coins">+</button>
+    </div>
+    <div id="topbar-tools">
+      <button class="tool-btn" type="button" title="Wallet">
+        <span class="tool-icon">👛</span><span class="tool-label">Wallet</span>
+      </button>
+      <button class="tool-btn" type="button" title="Leaderboard">
+        <span class="tool-icon">🏆</span><span class="tool-label">Ranks</span>
+      </button>
+      <button class="tool-btn" type="button" title="Sound">
+        <span class="tool-icon" id="btn-mute" onclick="toggleMute()">🔊</span><span class="tool-label">Sound</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- TABLE AREA -->
+  <div id="table-area">
+    <div id="table-bg"></div>
+    <div id="table-rail"></div>
+    <div id="table-rim"></div>
+    <div id="table-watermark">
+      <svg class="wm-crest" viewBox="0 0 400 70" xmlns="http://www.w3.org/2000/svg">
+        <g fill="currentColor" stroke="none">
+          <path d="M168,44 L177,16 L184,30 L191,8 L197,24 L200,0 L203,24 L209,8 L216,30 L223,16 L232,44 L232,50 Q232,53 229,53 L171,53 Q168,53 168,50 Z"/>
+          <circle cx="177" cy="14" r="3.6"/>
+          <circle cx="191" cy="6" r="3.6"/>
+          <circle cx="200" cy="-1" r="4"/>
+          <circle cx="209" cy="6" r="3.6"/>
+          <circle cx="223" cy="14" r="3.6"/>
+        </g>
+        <g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <path d="M160,32 C 128,22 90,19 55,22 C 38,24 22,27 13,29"/>
+          <path d="M13,29 C 7,31 3,28 5,24 C 7,21 11,22 11,25 C 11,28 7,29 6,27"/>
+          <path d="M240,32 C 272,22 310,19 345,22 C 362,24 378,27 387,29"/>
+          <path d="M387,29 C 393,31 397,28 395,24 C 393,21 389,22 389,25 C 389,28 393,29 394,27"/>
+        </g>
+      </svg>
+      <div class="wm-text">KALAK<br>3PATTI</div>
+    </div>
+    <div id="fx-layer"></div>
+
+    <!-- YOUR FLOATING PROFILE POD -->
+
+    <!-- ROOM INFO POD -->
+    <div id="room-info">
+      <div>Room: <b>Public #1245</b></div>
+      <div>Bet: <b id="room-bet">₹10 / No Limit</b></div>
+      <div class="players-count" id="players-count">👥 8/8</div>
+      <div id="seat-switch" onclick="switchSeat((LOCAL_SEAT+1)%NUM_SEATS)" title="Test: sit at the next seat — every seat gets the identical controls">🔄 Seat: <b id="seat-switch-name">—</b></div>
+    </div>
+
+    <!-- MSG BAR -->
+    <div id="msg-bar"><span id="msg-text"></span></div>
+
+    <!-- SEATS injected by JS -->
+
+    <!-- POT -->
+    <div id="pot-area">
+      <div id="pot-chips-visual"></div>
+      <div id="pot-label">
+        <span class="pot-title">POT</span>
+        <span class="pot-amount" id="pot-val">0</span>
+      </div>
+    </div>
+
+    <!-- PLAYER BIG CARDS -->
+    <div id="player-cards-big"></div>
+
+    <!-- HAND NAME -->
+    <div id="hand-name-display"></div>
+
+    <!-- YOUR TURN HUD — pinned to the extreme bottom-right corner of the table area, sitting right above the action bar's top edge -->
+    <div id="your-turn-hud">
+      <div id="turn-ring-wrap">
+        <svg id="turn-ring-svg" viewBox="0 0 62 62">
+          <circle class="ring-track" cx="31" cy="31" r="26"></circle>
+          <circle class="ring-fill" id="ring-fill" cx="31" cy="31" r="26"></circle>
+        </svg>
+        <span id="ring-seconds">28</span>
+      </div>
+      <div id="hud-label">Your Turn</div>
+    </div>
+
+    <!-- BLIND / CALL AMOUNT — extreme bottom-left corner, mirrors the ring HUD -->
+    <div id="hud-call-amt">Blind 50</div>
+
+    <!-- SIDESHOW REVEAL: you get to see the opponent's cards -->
+    <div id="sideshow-overlay">
+      <div id="ss-box">
+        <div id="ss-title">SIDESHOW</div>
+        <div class="ss-row" id="ss-opp-row">
+          <div class="ss-who"><span id="ss-opp-name">—</span><span class="ss-hand" id="ss-opp-hand"></span></div>
+          <div class="ss-cards" id="ss-opp-cards"></div>
+        </div>
+        <div class="ss-vs">VS</div>
+        <div class="ss-row" id="ss-my-row">
+          <div class="ss-who">YOU<span class="ss-hand" id="ss-my-hand"></span></div>
+          <div class="ss-cards" id="ss-my-cards"></div>
+        </div>
+        <div id="ss-result"></div>
+        <button id="btn-ss-continue" onclick="closeSideshow()">CONTINUE</button>
+      </div>
+    </div>
+
+    <!-- SIDESHOW REQUEST: the asked player answers ACCEPT / DENY (no answer in time = request lapses) -->
+    <div id="ssreq-overlay">
+      <div id="ssreq-box">
+        <div id="ssq-title">SIDESHOW REQUEST</div>
+        <div id="ssq-text">—</div>
+        <div id="ssq-sub"></div>
+        <div id="ssq-btns">
+          <button id="btn-ssq-deny" onclick="respondSideshow(false)">DENY</button>
+          <button id="btn-ssq-accept" onclick="respondSideshow(true)">ACCEPT</button>
+        </div>
+        <div id="ssq-bar"><i id="ssq-bar-fill"></i></div>
+        <div id="ssq-timer"><span id="ssq-timer-pre">Answer within</span> <b id="ssq-count">5</b>s</div>
+      </div>
+    </div>
+
+    <!-- GAME OVER: only one player is left — no more deals -->
+    <div id="king-overlay">
+      <div id="king-box">
+        <div id="king-crown">👑</div>
+        <div id="king-title">GAME OVER</div>
+        <div id="king-text">Congratulations <b id="king-name">—</b>, you are the King of this Table.</div>
+        <div id="king-sub"></div>
+        <div id="king-exit" aria-live="polite">
+          <span id="king-exit-text">EXITING THE TABLE</span>
+          <div id="king-bar"><i id="king-bar-fill"></i></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- WINNER OVERLAY -->
+    <div id="winner-overlay">
+      <div id="winner-box">
+        <h2 id="w-name">—</h2>
+        <div class="w-hand" id="w-hand-label">—</div>
+        <div id="winner-cards"></div>
+        <div id="loser-list"></div>
+        <div id="w-dealer-note"></div>
+        <div id="next-round-count" aria-live="polite">
+          <span id="nr-text">NEXT ROUND</span>
+          <div id="nr-bar"><i id="nr-bar-fill"></i></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ACTION BAR -->
+  <div id="action-bar">
+    <button class="action-btn" id="btn-pack" onclick="doAction('pack')">
+      <div class="btn-icon">🏳️</div>
+      <div class="btn-label">PACK</div>
+    </button>
+    <button class="action-btn" id="btn-see" onclick="doAction('see')">
+      <div class="btn-icon">🔎</div>
+      <div class="btn-label">SEE</div>
+    </button>
+    <button class="action-btn" id="btn-blind" onclick="doAction('blind')">
+      <div class="btn-icon">🎰</div>
+      <div class="btn-label">BLIND</div>
+      <div class="btn-sub" id="blind-amt">50</div>
+    </button>
+    <button class="action-btn" id="btn-chaal" onclick="doAction('chaal')">
+      <div class="btn-icon">⬆️</div>
+      <div class="btn-label">CALL</div>
+      <div class="btn-sub" id="chaal-amt">100</div>
+    </button>
+    <button class="action-btn" id="btn-raise" onclick="doAction('raise')">
+      <div class="btn-icon btn-mult">×2</div>
+      <div class="btn-label">RAISE</div>
+      <div class="btn-sub" id="raise-amt">₹20</div>
+    </button>
+    <button class="action-btn" id="btn-show" onclick="doAction('show')">
+      <div class="btn-icon">👁️</div>
+      <div class="btn-label">SHOW</div>
+      <div class="btn-sub" id="show-amt">₹10</div>
+    </button>
+    <button class="action-btn" id="btn-sideshow" onclick="doAction('sideshow')" style="display:none">
+      <div class="btn-label" id="ss-btn-label">SIDESHOW REQUEST</div>
+    </button>
+    <div id="spectator-note">
+      <span class="sn-eye">👁</span>
+      <span><b>WATCHING</b>You stood up — you're out of this game, but you can keep watching.</span>
+    </div>
+  </div>
+
+  <!-- OPTIONS MENU (opened by the ☰ button) -->
+  <div id="menu-backdrop" onclick="closeMenu()"></div>
+  <div id="menu-panel" role="menu" aria-label="Table options">
+    <div id="menu-title">TABLE OPTIONS</div>
+    <button class="menu-item danger" id="menu-exit" type="button" role="menuitem" onclick="exitTable()">
+      <span class="mi-icon">🚪</span>
+      <span class="mi-text"><b>Exit Table</b><small>Leave right now and go back to the main menu</small></span>
+    </button>
+    <button class="menu-item" id="menu-stand" type="button" role="menuitem" onclick="menuStandUp()">
+      <span class="mi-icon">🧍</span>
+      <span class="mi-text"><b>Stand Up</b><small id="menu-stand-sub">Give up your chips and watch from the side</small></span>
+    </button>
+  </div>
+
+</div>
+
+<!-- START OVERLAY -->
+<div id="start-overlay">
+  <div id="start-logo">KALAK <span>3PATTI</span></div>
+  <button id="btn-start" onclick="startGame()">PLAY VS COMPUTER</button>
+  <!-- JOIN TOURNAMENT + ADMIN PANEL form the tournament system: the admin creates/runs a tournament here,
+       players join it there. The two are linked to each other and have nothing to do with PLAY VS COMPUTER
+       above, which is just the standalone bot practice table. -->
+  <button class="start-menu-btn" id="btn-join-tournament" onclick="openJoinTournament()"><span class="smb-icon">🏆</span>JOIN TOURNAMENT</button>
+  <button class="start-menu-btn" id="btn-admin-panel" onclick="openAdminPanel()"><span class="smb-icon">⚙️</span>ADMIN PANEL</button>
+</div>
+
+<!-- COMING SOON (placeholder shown by main-menu items not built yet) -->
+<div id="soon-overlay" onclick="if(event.target===this)closeSoon()">
+  <div id="soon-box">
+    <div id="soon-title">COMING SOON</div>
+    <div id="soon-text">—</div>
+    <div id="soon-sub">This section isn't built yet.</div>
+    <button id="btn-soon-close" onclick="closeSoon()">OK</button>
+  </div>
+</div>
+
+<!-- ADMIN PANEL — password gate (part of the tournament system, see comment above) -->
+<div id="admin-pass-overlay" onclick="if(event.target===this)closeAdminPass()">
+  <div id="admin-pass-box">
+    <div id="admin-pass-title">ADMIN PANEL</div>
+    <div id="admin-pass-sub">Enter password to continue</div>
+    <input type="password" id="admin-pass-input" placeholder="Password" autocomplete="off" inputmode="text" />
+    <div id="admin-pass-error">Incorrect password</div>
+    <div id="admin-pass-btns">
+      <button id="btn-admin-pass-cancel" type="button" onclick="closeAdminPass()">CANCEL</button>
+      <button id="btn-admin-pass-submit" type="button" onclick="submitAdminPass()">UNLOCK</button>
+    </div>
+  </div>
+</div>
+
+<!-- ADMIN PANEL — actual panel, shown once the password is accepted; controls go in #admin-panel-body -->
+<div id="admin-panel-overlay" onclick="if(event.target===this)closeAdminPanelView()">
+  <div id="admin-panel-box">
+    <div id="admin-panel-title">ADMIN PANEL</div>
+    <div id="admin-panel-body" class="allow-scroll">
+
+      <!-- ADMIN MENU — list of settings screens; more items can be added here later -->
+      <div id="admin-menu-view">
+        <button class="menu-item" type="button" onclick="showAdminView('create-table')">
+          <span class="mi-icon">🃏</span>
+          <span class="mi-text"><b>Create Table</b><small>Seats, names, passwords, chips &amp; blinds for the tournament</small></span>
+        </button>
+      </div>
+
+      <!-- CREATE TABLE — tournament table setup form -->
+      <div id="admin-create-table-view" style="display:none;">
+
+        <button id="btn-ct-back" type="button" onclick="showAdminView('menu')">← Back to Admin Menu</button>
+
+        <div class="ap-section-title">NUMBER OF PLAYERS</div>
+        <div class="ap-field">
+          <label>Seats at the tournament table (2–8)</label>
+          <select class="ap-select" id="ct-num-players" onchange="updateSeatFieldsVisibility()">
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+            <option value="6">6</option>
+            <option value="7">7</option>
+            <option value="8" selected>8</option>
+          </select>
+        </div>
+
+        <div class="ap-section-title">HUMAN OR COMPUTER</div>
+        <div class="ap-field seat-field" data-seat="1"><label>Player 1</label><select class="ap-select" id="ct-type-1" onchange="onSeatTypeChange(1)"><option value="human" selected>Human</option><option value="computer">Computer</option></select></div>
+        <div class="ap-field seat-field" data-seat="2"><label>Player 2</label><select class="ap-select" id="ct-type-2" onchange="onSeatTypeChange(2)"><option value="human" selected>Human</option><option value="computer">Computer</option></select></div>
+        <div class="ap-field seat-field" data-seat="3"><label>Player 3</label><select class="ap-select" id="ct-type-3" onchange="onSeatTypeChange(3)"><option value="human" selected>Human</option><option value="computer">Computer</option></select></div>
+        <div class="ap-field seat-field" data-seat="4"><label>Player 4</label><select class="ap-select" id="ct-type-4" onchange="onSeatTypeChange(4)"><option value="human" selected>Human</option><option value="computer">Computer</option></select></div>
+        <div class="ap-field seat-field" data-seat="5"><label>Player 5</label><select class="ap-select" id="ct-type-5" onchange="onSeatTypeChange(5)"><option value="human" selected>Human</option><option value="computer">Computer</option></select></div>
+        <div class="ap-field seat-field" data-seat="6"><label>Player 6</label><select class="ap-select" id="ct-type-6" onchange="onSeatTypeChange(6)"><option value="human" selected>Human</option><option value="computer">Computer</option></select></div>
+        <div class="ap-field seat-field" data-seat="7"><label>Player 7</label><select class="ap-select" id="ct-type-7" onchange="onSeatTypeChange(7)"><option value="human" selected>Human</option><option value="computer">Computer</option></select></div>
+        <div class="ap-field seat-field" data-seat="8"><label>Player 8</label><select class="ap-select" id="ct-type-8" onchange="onSeatTypeChange(8)"><option value="human" selected>Human</option><option value="computer">Computer</option></select></div>
+
+        <div class="ap-section-title">PLAYER NAMES</div>
+        <div class="ap-field seat-field" data-seat="1"><label>Player 1 Name</label><input class="ap-input" id="ct-name-1" type="text" value="Player1" maxlength="20"></div>
+        <div class="ap-field seat-field" data-seat="2"><label>Player 2 Name</label><input class="ap-input" id="ct-name-2" type="text" value="Player2" maxlength="20"></div>
+        <div class="ap-field seat-field" data-seat="3"><label>Player 3 Name</label><input class="ap-input" id="ct-name-3" type="text" value="Player3" maxlength="20"></div>
+        <div class="ap-field seat-field" data-seat="4"><label>Player 4 Name</label><input class="ap-input" id="ct-name-4" type="text" value="Player4" maxlength="20"></div>
+        <div class="ap-field seat-field" data-seat="5"><label>Player 5 Name</label><input class="ap-input" id="ct-name-5" type="text" value="Player5" maxlength="20"></div>
+        <div class="ap-field seat-field" data-seat="6"><label>Player 6 Name</label><input class="ap-input" id="ct-name-6" type="text" value="Player6" maxlength="20"></div>
+        <div class="ap-field seat-field" data-seat="7"><label>Player 7 Name</label><input class="ap-input" id="ct-name-7" type="text" value="Player7" maxlength="20"></div>
+        <div class="ap-field seat-field" data-seat="8"><label>Player 8 Name</label><input class="ap-input" id="ct-name-8" type="text" value="Player8" maxlength="20"></div>
+
+        <div class="ap-section-title">PASSWORD TO JOIN TOURNAMENT</div>
+        <div class="ap-field seat-field" data-seat="1"><label>Player 1 Password</label><input class="ap-input" id="ct-pw-1" type="text" value="1" maxlength="20"><small class="ap-hint ct-pw-note" id="ct-pw-note-1">Bot seat — no password needed, seat fills automatically.</small></div>
+        <div class="ap-field seat-field" data-seat="2"><label>Player 2 Password</label><input class="ap-input" id="ct-pw-2" type="text" value="2" maxlength="20"><small class="ap-hint ct-pw-note" id="ct-pw-note-2">Bot seat — no password needed, seat fills automatically.</small></div>
+        <div class="ap-field seat-field" data-seat="3"><label>Player 3 Password</label><input class="ap-input" id="ct-pw-3" type="text" value="3" maxlength="20"><small class="ap-hint ct-pw-note" id="ct-pw-note-3">Bot seat — no password needed, seat fills automatically.</small></div>
+        <div class="ap-field seat-field" data-seat="4"><label>Player 4 Password</label><input class="ap-input" id="ct-pw-4" type="text" value="4" maxlength="20"><small class="ap-hint ct-pw-note" id="ct-pw-note-4">Bot seat — no password needed, seat fills automatically.</small></div>
+        <div class="ap-field seat-field" data-seat="5"><label>Player 5 Password</label><input class="ap-input" id="ct-pw-5" type="text" value="5" maxlength="20"><small class="ap-hint ct-pw-note" id="ct-pw-note-5">Bot seat — no password needed, seat fills automatically.</small></div>
+        <div class="ap-field seat-field" data-seat="6"><label>Player 6 Password</label><input class="ap-input" id="ct-pw-6" type="text" value="6" maxlength="20"><small class="ap-hint ct-pw-note" id="ct-pw-note-6">Bot seat — no password needed, seat fills automatically.</small></div>
+        <div class="ap-field seat-field" data-seat="7"><label>Player 7 Password</label><input class="ap-input" id="ct-pw-7" type="text" value="7" maxlength="20"><small class="ap-hint ct-pw-note" id="ct-pw-note-7">Bot seat — no password needed, seat fills automatically.</small></div>
+        <div class="ap-field seat-field" data-seat="8"><label>Player 8 Password</label><input class="ap-input" id="ct-pw-8" type="text" value="8" maxlength="20"><small class="ap-hint ct-pw-note" id="ct-pw-note-8">Bot seat — no password needed, seat fills automatically.</small></div>
+
+
+        <div class="ap-section-title">MATCH OBSERVER</div>
+        <div class="ap-field">
+          <label>Observer Password (watch only, no seat)</label>
+          <input class="ap-input" id="ct-observer-pw" type="text" value="abc" maxlength="20">
+        </div>
+
+        <div class="ap-section-title">CHIPS &amp; BLINDS</div>
+        <div class="ap-field">
+          <label>Chips Allowed for Each Player (₹)</label>
+          <input class="ap-input" id="ct-chips" type="number" min="1" value="5000">
+        </div>
+        <div class="ap-field">
+          <label>Starting Boot (₹)</label>
+          <input class="ap-input" id="ct-boot" type="number" min="0" value="10">
+        </div>
+        <div class="ap-field">
+          <label>Starting Blind (₹)</label>
+          <input class="ap-input" id="ct-blind" type="number" min="0" value="10">
+        </div>
+        <div class="ap-field">
+          <label>Max Blind / Call</label>
+          <input class="ap-input" id="ct-max-blind" type="text" value="Unlimited">
+          <small class="ap-hint">Type a number to cap it, or leave as Unlimited</small>
+        </div>
+        <div class="ap-field">
+          <label>Boot Increase Interval (minutes)</label>
+          <input class="ap-input" id="ct-boot-interval" type="number" min="1" value="5">
+          <small class="ap-hint">The boot doubles (2×) every interval</small>
+        </div>
+
+        <div class="ap-section-title">SCHEDULE</div>
+        <div class="ap-field">
+          <label>Match Start Time (IST)</label>
+          <input class="ap-input" id="ct-start-time" type="time" step="1">
+        </div>
+
+        <div id="ct-status"></div>
+
+        <div id="ct-actions">
+          <button id="btn-ct-reset" type="button" onclick="resetCreateTableForm()">RESET TO DEFAULT</button>
+          <button id="btn-ct-confirm" type="button" onclick="confirmCreateTable()">CONFIRM CREATE TABLE</button>
+        </div>
+
+      </div>
+
+    </div>
+    <button id="btn-admin-panel-close" type="button" onclick="closeAdminPanelView()">CLOSE</button>
+  </div>
+</div>
+
+<!-- JOIN TOURNAMENT — password gate: sends the password to the server (/api/join in server.js), which finds
+     the matching seat or the observer slot. The password list itself never reaches this page — see comment
+     above ADMIN PANEL for how the tournament system as a whole fits together. -->
+<div id="join-pass-overlay" onclick="if(event.target===this)closeJoinPass()">
+  <div id="join-pass-box">
+    <div id="join-pass-title">JOIN TOURNAMENT</div>
+    <div id="join-pass-sub">Enter your password to find your seat</div>
+    <input type="password" id="join-pass-input" placeholder="Password" autocomplete="off" inputmode="text" />
+    <div id="join-pass-error">Incorrect password</div>
+    <div id="join-pass-btns">
+      <button id="btn-join-pass-cancel" type="button" onclick="closeJoinPass()">CANCEL</button>
+      <button id="btn-join-pass-submit" type="button" onclick="submitJoinPass()">JOIN</button>
+    </div>
+  </div>
+</div>
+
+<!-- JOIN TOURNAMENT — seated/observer holding screen, shown once the password matches. This is only a
+     confirmation screen for now — it doesn't yet start or sync a live match, see openJoinTournament. -->
+<div id="join-seated-overlay" onclick="if(event.target===this)closeJoinSeated()">
+  <div id="join-seated-box">
+    <div id="join-seated-title">—</div>
+    <div id="join-seated-sub">—</div>
+    <div id="join-seated-details"></div>
+    <button id="btn-join-seated-leave" type="button" onclick="leaveJoinSeated()">LEAVE</button>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════
+// CONSTANTS
+// ═══════════════════════
+const SUITS_SYM = ['♣','♦','♥','♠'];
+const RED_S = [1,2];
+const NAMES  = ['Karan','Priya','Aman','Neha','Arjun','Vikram','Rohan','Simran'];   // real names for ALL seats (Karan = placeholder for seat 0 — later: the account name)
+const START_CHIP=5000;                          // every player starts the game with the same stack — change it here
+const START_CHIPS=NAMES.map(()=>START_CHIP);
+const BOOT_START = 10;                        // boot at tournament clock 0:00
+const MAX_BOOT = 640;                         // boot escalation is capped here for good (reached at 30:00)
+const BOOT_ESCALATE_MS = 5*60*1000;           // boot doubles every 5 minutes of TOURNAMENT-ELAPSED time (real clock, not hand count)
+// NOTE: the boot itself now lives on G (G.currentBoot / G.pendingBoot below), since it changes over the
+// course of a tournament. "Opening stake" for a hand is always G.currentBoot*2 (a SEEN player pays that in
+// full, a BLIND player pays half = the boot) — see startRound(), where G.currentBet is set each hand.
+// [bright face, dark rim] pairs for each seat's little bet-chip icon — same casino palette as the pot pile
+const SEAT_CHIP_COLORS=[
+  ['#f23843','#8a0d16'],
+  ['#0d8bf0','#03356b'],
+  ['#a52bd6','#4a1568'],
+  ['#f0940c','#8a4e06'],
+  ['#16bd63','#0a5c30'],
+  ['#12b5b0','#065450'],   // 6th colour
+  ['#e91e8c','#7a0f49'],   // 7th colour
+  ['#d4b81a','#7a6708'],   // 8th colour so every seat has its own
+];
+// (raises are uncapped — see doAction's 'raise' case, which just doubles G.currentBet each time)
+// Seat index order runs CLOCKWISE around the table (seen from above, YOU at the bottom):
+// bottom-centre → bottom-left → mid-left → top-left → top-centre → top-right → mid-right → bottom-right → back to YOU.
+// Because of this, "next player" is always (i+1)%8 and "previous player" is (i-1+8)%8.
+const NUM_SEATS=8;
+// The seat THIS screen controls. Every seat — yours, a bot's, or (later) another person's — is driven by the
+// very same performAction(seat,type) below, so going multiplayer is just "map a remote player's input to performAction".
+let LOCAL_SEAT=(()=>{                              // open the page with ?seat=3 to start as another seat (0-7)
+  try{ const n=parseInt(new URLSearchParams(location.search).get('seat'),10); if(n>=0&&n<NUM_SEATS) return n; }catch(e){}
+  return 0;
+})();
+// What to call a seat on screen: the seat this screen controls is always "YOU", everyone else is by name.
+const seatName=i=>i===LOCAL_SEAT?'YOU':NAMES[i];
+const TURN_SECS=28;                                 // time each seat gets to act before it is packed
+// SLOTS around the table (clockwise from the bottom). A seat's slot = how far it is clockwise from the seat
+// this screen controls, so "me" always sits at the bottom and everyone else keeps their clockwise order.
+const SEAT_STYLES=[
+  'bottom:9%;left:50%;transform:translateX(-50%)',  // slot 0 — me, bottom centre
+  'bottom:16%;left:2%',                             // slot 1 — bottom left
+  'top:39%;left:0%',                                // slot 2 — mid left
+  'top:15%;left:3%',                                // slot 3 — top left
+  'top:6%;left:50%;transform:translateX(-50%)',     // slot 4 — top centre
+  'top:15%;right:3%',                               // slot 5 — top right
+  'top:39%;right:0%',                               // slot 6 — mid right
+  'bottom:16%;right:2%'                             // slot 7 — bottom right
+];
+const slotOf=i=>(i-LOCAL_SEAT+NUM_SEATS)%NUM_SEATS;
+const nextSeat=i=>(i+1)%NUM_SEATS;                  // clockwise neighbour (acts after i)
+const prevSeat=i=>(i-1+NUM_SEATS)%NUM_SEATS;        // counter-clockwise neighbour (acted before i)
+
+// Bot personalities — each trait 0..1, drive fold/raise/see tendencies
+const DEFAULT_PERSONA={aggr:0.4,bluff:0.2,tight:0.5,seenBias:0.5};
+// Every seat has a personality, so any seat can be handed to the bot brain (e.g. when you sit at another seat).
+const BOT_PERSONA=[
+  {aggr:0.40,bluff:0.25,tight:0.45,seenBias:0.50}, // Karan   — balanced
+  {aggr:0.55,bluff:0.35,tight:0.35,seenBias:0.60}, // Priya   — aggressive bluffer
+  {aggr:0.25,bluff:0.10,tight:0.70,seenBias:0.30}, // Aman    — tight & conservative
+  {aggr:0.40,bluff:0.45,tight:0.30,seenBias:0.70}, // Neha    — loose caller
+  {aggr:0.45,bluff:0.20,tight:0.50,seenBias:0.50}, // Arjun   — balanced
+  {aggr:0.65,bluff:0.30,tight:0.25,seenBias:0.55}, // Vikram  — high-roller
+  {aggr:0.35,bluff:0.15,tight:0.60,seenBias:0.40}, // Rohan   — cautious grinder
+  {aggr:0.50,bluff:0.40,tight:0.35,seenBias:0.65}  // Simran  — fearless bluffer
+];
+
+// ═══════════════════════
+// PROCEDURAL AVATAR PORTRAITS (self-contained SVG, no external images)
+// ═══════════════════════
+function avatarURI(idx){
+  const C=[
+    // Karan — warm brown skin, dark short hair, stubble
+    {sk:'#c8845a',sk2:'#a86840',h:'#1a0e06',h2:'#0d0700',bg1:'#1e3a5f',bg2:'#0a1e38',sh:'#1a2e50',st:'short',br:true,gl:false,f:'m'},
+    // Priya — light skin, long black hair, no beard
+    {sk:'#e8b48a',sk2:'#c8906a',h:'#0d0800',h2:'#060400',bg1:'#7a2255',bg2:'#3a0e28',sh:'#6a1a45',st:'long',br:false,gl:false,f:'f'},
+    // Aman — medium tan, short dark hair, sunglasses
+    {sk:'#c07848',sk2:'#a05c30',h:'#111111',h2:'#080808',bg1:'#0e4a58',bg2:'#061e28',sh:'#0a3848',st:'short',br:false,gl:true,f:'m'},
+    // Neha — fair skin, hair in bun
+    {sk:'#f0c898',sk2:'#d0a070',h:'#2b1006',h2:'#150804',bg1:'#5a1878',bg2:'#280838',sh:'#4a1268',st:'bun',br:false,gl:false,f:'f'},
+    // Arjun — medium brown, neat short hair, young
+    {sk:'#c88050',sk2:'#a86030',h:'#1a1005',h2:'#0d0802',bg1:'#184a28',bg2:'#0a2210',sh:'#123818',st:'short',br:false,gl:false,f:'m'},
+    // Vikram — tan, beard, slightly older
+    {sk:'#b87848',sk2:'#986030',h:'#0d0d0d',h2:'#050505',bg1:'#4a3010',bg2:'#201208',sh:'#382008',st:'beard',br:true,gl:false,f:'m'},
+    // Rohan — golden tan, short dark hair, no beard
+    {sk:'#d89868',sk2:'#b87848',h:'#1c1006',h2:'#0d0803',bg1:'#5c3a0a',bg2:'#2e1c04',sh:'#4a2e08',st:'short',br:false,gl:false,f:'m'},
+    // Simran — warm tan, long dark hair
+    {sk:'#e0a878',sk2:'#c08858',h:'#100a04',h2:'#080502',bg1:'#123f3f',bg2:'#081f1f',sh:'#0e3232',st:'long',br:false,gl:false,f:'f'}
+  ];
+  const c=C[idx]||C[0];
+
+  function hair(st,hc,hc2,sk){
+    switch(st){
+      case 'long':
+        return `<path d="M27 44 Q24 16 50 14 Q76 16 73 44 Q71 28 62 23 Q56 20 50 20 Q44 20 38 23 Q29 28 27 44Z" fill="${hc}"/>
+                <path d="M27 44 Q22 62 24 80 Q28 72 30 62 Q31 50 29 46Z" fill="${hc}"/>
+                <path d="M73 44 Q78 62 76 80 Q72 72 70 62 Q69 50 71 46Z" fill="${hc}"/>
+                <path d="M24 80 Q26 92 32 96 Q28 84 27 74Z" fill="${hc2}"/>
+                <path d="M76 80 Q74 92 68 96 Q72 84 73 74Z" fill="${hc2}"/>`;
+      case 'bun':
+        return `<path d="M28 45 Q26 18 50 16 Q74 18 72 45 Q70 30 62 25 Q56 21 50 21 Q44 21 38 25 Q30 30 28 45Z" fill="${hc}"/>
+                <circle cx="50" cy="10" r="9" fill="${hc}"/>
+                <circle cx="50" cy="10" r="6" fill="${hc2}"/>
+                <path d="M44 16 Q50 13 56 16" stroke="${hc2}" stroke-width="2" fill="none"/>`;
+      case 'beard':
+        return `<path d="M27 44 Q25 16 50 14 Q75 16 73 44 Q71 28 62 23 Q56 20 50 20 Q44 20 38 23 Q29 28 27 44Z" fill="${hc}"/>
+                <path d="M34 66 Q32 76 36 83 Q43 90 50 91 Q57 90 64 83 Q68 76 66 66 Q62 74 50 75 Q38 74 34 66Z" fill="${hc}"/>
+                <path d="M34 66 Q36 70 38 68" stroke="${sk}" stroke-width="1" fill="none"/>
+                <path d="M66 66 Q64 70 62 68" stroke="${sk}" stroke-width="1" fill="none"/>`;
+      default: // short
+        return `<path d="M27 46 Q24 16 50 14 Q76 16 73 46 Q72 28 62 22 Q56 19 50 19 Q44 19 38 22 Q28 28 27 46Z" fill="${hc}"/>
+                <path d="M27 46 Q24 40 26 36" fill="${hc}"/>
+                <path d="M73 46 Q76 40 74 36" fill="${hc}"/>`;
+    }
+  }
+
+  function eye(cx,gl){
+    const lx=cx-13, rx=cx+13;
+    if(gl){
+      // sunglasses
+      return `<rect x="${lx-7}" y="48" width="14" height="9" rx="3" fill="#111" opacity="0.92"/>
+              <rect x="${rx-7}" y="48" width="14" height="9" rx="3" fill="#111" opacity="0.92"/>
+              <line x1="${lx+7}" y1="52" x2="${rx-7}" y2="52" stroke="#333" stroke-width="1.5"/>
+              <line x1="${lx-7}" y1="52" x2="${lx-10}" y2="51" stroke="#333" stroke-width="1.5"/>
+              <line x1="${rx+7}" y1="52" x2="${rx+10}" y2="51" stroke="#333" stroke-width="1.5"/>`;
+    }
+    return `<ellipse cx="${lx}" cy="52" rx="5.5" ry="4.5" fill="white"/>
+            <ellipse cx="${rx}" cy="52" rx="5.5" ry="4.5" fill="white"/>
+            <circle cx="${lx}" cy="52" r="3.2" fill="#241608"/>
+            <circle cx="${rx}" cy="52" r="3.2" fill="#241608"/>
+            <circle cx="${lx+1.2}" cy="50.5" r="1.1" fill="white"/>
+            <circle cx="${rx+1.2}" cy="50.5" r="1.1" fill="white"/>`;
+  }
+
+  const svg=`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'>
+  <defs>
+    <linearGradient id='bg' x1='0' y1='0' x2='0' y2='1'>
+      <stop offset='0' stop-color='${c.bg1}'/><stop offset='1' stop-color='${c.bg2}'/>
+    </linearGradient>
+    <clipPath id='cl'><circle cx='50' cy='50' r='50'/></clipPath>
+  </defs>
+  <circle cx='50' cy='50' r='50' fill='url(#bg)'/>
+  <g clip-path='url(#cl)'>
+    <!-- shirt -->
+    <ellipse cx='50' cy='100' rx='36' ry='20' fill='${c.sh}'/>
+    <ellipse cx='50' cy='96' rx='28' ry='18' fill='${c.sh}'/>
+    <!-- neck -->
+    <rect x='43' y='74' width='14' height='16' rx='5' fill='${c.sk}'/>
+    <!-- head -->
+    <ellipse cx='50' cy='54' rx='23' ry='26' fill='${c.sk}'/>
+    <!-- ears -->
+    <ellipse cx='27' cy='56' rx='4' ry='5.5' fill='${c.sk2}'/>
+    <ellipse cx='73' cy='56' rx='4' ry='5.5' fill='${c.sk2}'/>
+    <ellipse cx='27' cy='56' rx='2.5' ry='3.5' fill='${c.sk}'/>
+    <ellipse cx='73' cy='56' rx='2.5' ry='3.5' fill='${c.sk}'/>
+    <!-- hair -->
+    ${hair(c.st,c.h,c.h2,c.sk2)}
+    <!-- eyebrows -->
+    <path d='M36 44 Q41.5 41 46 44' stroke='${c.h}' stroke-width='2.2' fill='none' stroke-linecap='round'/>
+    <path d='M54 44 Q58.5 41 64 44' stroke='${c.h}' stroke-width='2.2' fill='none' stroke-linecap='round'/>
+    <!-- eyes -->
+    ${eye(50,c.gl)}
+    <!-- nose -->
+    <path d='M47.5 58 Q50 64 52.5 58' stroke='${c.sk2}' stroke-width='1.8' fill='none' stroke-linecap='round'/>
+    <circle cx='46.5' cy='63' r='1.5' fill='${c.sk2}' opacity='0.6'/>
+    <circle cx='53.5' cy='63' r='1.5' fill='${c.sk2}' opacity='0.6'/>
+    <!-- mouth -->
+    <path d='M41 70 Q50 77 59 70' stroke='#8a4a30' stroke-width='2.2' fill='none' stroke-linecap='round'/>
+    <!-- subtle chin shadow -->
+    <ellipse cx='50' cy='78' rx='10' ry='3' fill='${c.sk2}' opacity='0.35'/>
+    <!-- face highlight -->
+    <ellipse cx='43' cy='46' rx='5' ry='7' fill='white' opacity='0.07'/>
+  </g>
+</svg>`;
+  return 'data:image/svg+xml;utf8,'+encodeURIComponent(svg);
+}
+
+// ═══════════════════════
+// AUDIO ENGINE v2 — synthesized card-table foley (Web Audio API, no sound files)
+//   • one shared room reverb + master compressor, so everything sounds like it's in the same room
+//   • every hit is slightly randomised (pitch, timing, volume, stereo spot) so repeats never sound identical
+//   • cards/chips are built from filtered noise + tiny resonant "ceramic" partials; wins use real bell tones
+//   • change SFX_VOLUME to make the whole game quieter / louder
+// ═══════════════════════
+const SFX_VOLUME=0.95;
+let actx=null, SFX_MUTED=false;
+let masterBus=null, dryBus=null, wetBus=null, noiseBuf=null;
+
+function ensureAudio(){
+  if(!actx){
+    try{ actx=new (window.AudioContext||window.webkitAudioContext)(); buildAudioGraph(); }
+    catch(e){ actx=null; }
+  }
+  if(actx && actx.state!=='running'){
+    try{ const r=actx.resume(); if(r&&r.catch) r.catch(()=>{}); }catch(e){}
+  }
+}
+function toggleMute(){
+  SFX_MUTED=!SFX_MUTED;
+  const b=document.getElementById('btn-mute');
+  if(b) b.textContent=SFX_MUTED?'🔇':'🔊';
+}
+// browsers only allow sound after a tap/click, so wake the audio up on the very first touch (and when the tab returns)
+['pointerdown','touchstart','keydown'].forEach(ev=>window.addEventListener(ev,ensureAudio,{passive:true}));
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&actx) ensureAudio(); });
+
+function buildAudioGraph(){
+  masterBus=actx.createGain(); masterBus.gain.value=SFX_VOLUME;
+  const comp=actx.createDynamicsCompressor();          // glues overlapping sounds together and stops clipping
+  comp.threshold.value=-16; comp.knee.value=20; comp.ratio.value=5; comp.attack.value=0.002; comp.release.value=0.2;
+  masterBus.connect(comp); comp.connect(actx.destination);
+  dryBus=actx.createGain(); dryBus.connect(masterBus);
+  // small warm room
+  const conv=actx.createConvolver(); conv.buffer=makeImpulse(1.1,2.8);
+  const wetOut=actx.createGain(); wetOut.gain.value=0.55;
+  wetBus=actx.createGain(); wetBus.connect(conv); conv.connect(wetOut); wetOut.connect(masterBus);
+  // two seconds of white noise, shared by every noise voice
+  const len=Math.floor(actx.sampleRate*2);
+  noiseBuf=actx.createBuffer(1,len,actx.sampleRate);
+  const d=noiseBuf.getChannelData(0);
+  for(let i=0;i<len;i++) d[i]=Math.random()*2-1;
+}
+function makeImpulse(sec,decay){
+  const rate=actx.sampleRate, len=Math.floor(rate*sec);
+  const buf=actx.createBuffer(2,len,rate);
+  for(let c=0;c<2;c++){
+    const d=buf.getChannelData(c);
+    for(let i=0;i<len;i++){
+      const k=i/len;
+      d[i]=(Math.random()*2-1)*Math.pow(1-k,decay)*(k<0.004?k/0.004:1);   // soft attack, smooth exponential tail
+    }
+  }
+  return buf;
+}
+
+const rv=a=>1+(Math.random()*2-1)*a;                   // random multiplier around 1 (±a)
+function sfxReady(){ ensureAudio(); return !SFX_MUTED&&!!actx&&!!dryBus; }
+function sfxOut(node,wet,pan){                          // dry path + optional reverb send + optional stereo position
+  let last=node;
+  if(pan&&actx.createStereoPanner){
+    const p=actx.createStereoPanner(); p.pan.value=Math.max(-1,Math.min(1,pan));
+    last.connect(p); last=p;
+  }
+  last.connect(dryBus);
+  if(wet>0){ const s=actx.createGain(); s.gain.value=wet; last.connect(s); s.connect(wetBus); }
+}
+
+// ── voices ──────────────────────────────────────────────
+// filtered-noise hit: {d delay, dur, vol, type, f0→f1 (filter sweep), q, atk, wet, pan}
+function nz(o){
+  const t=actx.currentTime+(o.d||0), dur=o.dur||0.06, atk=o.atk||0.003;
+  const src=actx.createBufferSource(); src.buffer=noiseBuf;
+  const f=actx.createBiquadFilter(); f.type=o.type||'bandpass'; f.Q.value=o.q||0.8;
+  f.frequency.setValueAtTime(o.f0||3000,t);
+  if(o.f1) f.frequency.exponentialRampToValueAtTime(o.f1,t+dur);
+  const g=actx.createGain();
+  g.gain.setValueAtTime(0.0001,t);
+  g.gain.exponentialRampToValueAtTime(o.vol||0.1,t+atk);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  src.connect(f); f.connect(g); sfxOut(g,o.wet||0,o.pan||0);
+  src.start(t,Math.random()*1.5,dur+0.03);              // random read position → every hit is different
+}
+// pitched hit: {d delay, f→f2 (pitch glide), dur, vol, type, atk, wet, pan}
+function tn(o){
+  const t=actx.currentTime+(o.d||0), dur=o.dur||0.1, atk=o.atk||0.004;
+  const osc=actx.createOscillator(); osc.type=o.type||'sine';
+  osc.frequency.setValueAtTime(o.f,t);
+  if(o.f2) osc.frequency.exponentialRampToValueAtTime(o.f2,t+dur);
+  const g=actx.createGain();
+  g.gain.setValueAtTime(0.0001,t);
+  g.gain.exponentialRampToValueAtTime(o.vol||0.1,t+atk);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  osc.connect(g); sfxOut(g,o.wet||0,o.pan||0);
+  osc.start(t); osc.stop(t+dur+0.03);
+}
+// struck-bell tone: fundamental + inharmonic partials that fade faster than the fundamental
+function bell(f,d,vol,dur,wet){
+  [[1,1,1],[2.0,0.32,0.55],[2.76,0.22,0.35],[4.1,0.10,0.2],[5.4,0.05,0.12]].forEach(([r,a,s])=>{
+    if(f*r<9000) tn({d,f:f*r,dur:dur*s,vol:vol*a,type:'sine',atk:0.002,wet});
+  });
+}
+// warm brass-style note: two slightly detuned saws through an opening low-pass filter
+function brass(f,d,dur,vol,wet){
+  const t=actx.currentTime+d;
+  const g=actx.createGain();
+  g.gain.setValueAtTime(0.0001,t);
+  g.gain.exponentialRampToValueAtTime(vol,t+0.03);
+  g.gain.setValueAtTime(vol,t+Math.max(0.05,dur-0.08));
+  g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  const lp=actx.createBiquadFilter(); lp.type='lowpass'; lp.Q.value=2;
+  lp.frequency.setValueAtTime(500,t);
+  lp.frequency.exponentialRampToValueAtTime(2600,t+0.07);
+  lp.frequency.exponentialRampToValueAtTime(1400,t+dur);
+  [-7,7].forEach(det=>{
+    const o=actx.createOscillator(); o.type='sawtooth'; o.frequency.value=f; o.detune.value=det;
+    o.connect(lp); o.start(t); o.stop(t+dur+0.03);
+  });
+  lp.connect(g); sfxOut(g,wet||0.25);
+}
+// one casino-chip "clack": ringing ceramic partials + wooden body knock + click
+function chipClack(d,vol,pan){
+  const k=rv(0.18);
+  [[2350,1],[3560,0.7],[5180,0.45]].forEach(([f,a],i)=>tn({d,f:f*k,dur:0.05-i*0.009,vol:vol*a,type:'sine',atk:0.001,wet:0.12,pan}));
+  tn({d,f:820*k,f2:520*k,dur:0.045,vol:vol*0.9,type:'triangle',atk:0.002,pan});
+  nz({d,type:'highpass',f0:3500,dur:0.018,vol:vol*0.5,atk:0.001,pan});
+}
+function chipCascade(start,n,vol){                       // a handful of chips tumbling into a stack
+  let t=start;
+  for(let i=0;i<n;i++){ chipClack(t,vol*rv(0.35),(Math.random()-0.5)*0.8); t+=0.03+i*0.007+Math.random()*0.02; }
+}
+
+// ── game sounds (names unchanged so the rest of the game just works) ─────────
+function playChipSound(amount){                           // bigger bets = more chips clacking
+  if(!sfxReady()) return;
+  const n=Math.max(2,Math.min(6,2+Math.round(Math.log2(Math.max(amount||20,10)/10))));
+  let t=0;
+  for(let i=0;i<n;i++){ chipClack(t,0.05*rv(0.3),(Math.random()-0.5)*0.4); t+=0.024+Math.random()*0.03; }
+  nz({type:'bandpass',f0:1800,q:0.7,dur:0.06+n*0.012,vol:0.02,atk:0.004,wet:0.1});   // soft rattle underneath
+}
+function playCardSound(){                                 // card dealt / flicked onto felt
+  if(!sfxReady()) return;
+  const p=(Math.random()-0.5)*0.5, k=rv(0.1);
+  nz({type:'bandpass',f0:6400*k,f1:2800*k,q:1.1,dur:0.05,vol:0.13,atk:0.002,pan:p});                 // flick
+  nz({d:0.008,type:'bandpass',f0:3200*k,f1:1400,q:0.6,dur:0.1,vol:0.06,atk:0.006,pan:p,wet:0.08});  // paper swish
+  tn({d:0.03,f:170*k,f2:70,dur:0.09,vol:0.09,type:'sine',atk:0.003,pan:p});                         // felt thud
+  nz({d:0.03,type:'lowpass',f0:520,q:0.5,dur:0.05,vol:0.07,atk:0.002,pan:p});
+}
+function playPeekSound(){                                 // lifting the corner of your cards to look (SEE)
+  if(!sfxReady()) return;
+  nz({type:'bandpass',f0:1500,f1:3600,q:0.8,dur:0.13,vol:0.07,atk:0.03,wet:0.05});
+  nz({d:0.12,type:'bandpass',f0:5200,f1:2600,q:1.1,dur:0.04,vol:0.09,atk:0.002});
+  tn({d:0.13,f:140,f2:80,dur:0.06,vol:0.05,type:'sine'});
+}
+function playPackSound(){                                 // cards thrown in / slid away
+  if(!sfxReady()) return;
+  nz({type:'bandpass',f0:5200,f1:1000,q:0.9,dur:0.24,vol:0.11,atk:0.01,wet:0.1});   // slide across the felt
+  nz({d:0.05,type:'bandpass',f0:4200,f1:1600,q:1,dur:0.05,vol:0.06,atk:0.002});     // little card flutters
+  nz({d:0.10,type:'bandpass',f0:3800,f1:1500,q:1,dur:0.05,vol:0.05,atk:0.002});
+  tn({d:0.17,f:120,f2:55,dur:0.14,vol:0.09,type:'sine',atk:0.005});                 // soft drop
+  nz({d:0.17,type:'lowpass',f0:420,q:0.5,dur:0.08,vol:0.07,atk:0.003});
+}
+function playShowSound(){                                 // SHOW / sideshow: cards snapped face-up + a chime
+  if(!sfxReady()) return;
+  nz({type:'highpass',f0:4200,dur:0.035,vol:0.11,atk:0.001});
+  nz({d:0.004,type:'bandpass',f0:5200,f1:2400,q:1.2,dur:0.06,vol:0.1,atk:0.002});
+  bell(659.25,0.06,0.07,0.55,0.3);
+  bell(987.77,0.15,0.06,0.7,0.35);
+}
+function playTickSound(){                                 // last-seconds timer: wood-block tick, sharper in the final 2s
+  if(!sfxReady()) return;
+  const urgent=(typeof G!=='undefined'&&G&&G.timerLeft<=2);
+  const f=urgent?2500:1750;
+  tn({f,f2:f*0.8,dur:0.04,vol:urgent?0.08:0.05,type:'sine',atk:0.001});
+  nz({type:'bandpass',f0:f*1.6,q:4,dur:0.015,vol:urgent?0.035:0.02,atk:0.001});
+}
+function playTurnSound(){                                 // gentle "it's your turn" ding
+  if(!sfxReady()) return;
+  bell(1174.66,0,0.05,0.45,0.25);
+  bell(1567.98,0.09,0.045,0.55,0.3);
+}
+function playWinSound(){                                  // you won the pot
+  if(!sfxReady()) return;
+  chipCascade(0,9,0.045);
+  [523.25,659.25,783.99,1046.5].forEach((f,i)=>bell(f,0.14+i*0.12,0.085,1.0,0.35));   // C-E-G-C bells
+  [1046.5,1318.5,1568].forEach(f=>bell(f,0.62,0.05,1.5,0.45));                        // final chord swell
+  tn({d:0.62,f:130.81,dur:1.1,vol:0.09,type:'sine',atk:0.01,wet:0.2});                // warm low root
+  tn({d:0.62,f:261.63,dur:1.0,vol:0.04,type:'triangle',atk:0.01,wet:0.2});
+  [0.95,1.06,1.19].forEach(d=>bell(2093*rv(0.04),d,0.03,0.6,0.5));                    // sparkle tail
+}
+function playLoseSound(){                                 // someone else took the pot: soft and understated
+  if(!sfxReady()) return;
+  chipCascade(0,4,0.03);
+  bell(392,0.10,0.045,0.5,0.3);
+  bell(311.13,0.26,0.04,0.7,0.35);
+}
+function playKingFanfare(){                               // you became King of the table
+  if(!sfxReady()) return;
+  [[392,0,0.16],[392,0.19,0.16],[523.25,0.38,0.16],[659.25,0.57,0.16],[783.99,0.76,0.9]]
+    .forEach(([f,d,dur])=>{ brass(f,d,dur,0.09,0.25); brass(f/2,d,dur,0.05,0.2); });
+  [1046.5,1318.5,1568,2093].forEach((f,i)=>bell(f,0.85+i*0.09,0.06,1.8,0.5));
+  chipCascade(0.76,14,0.04);
+  tn({d:0.76,f:130.81,dur:1.3,vol:0.1,type:'sine',atk:0.01,wet:0.2});
+}
+
+// ═══════════════════════
+// STATE
+// ═══════════════════════
+let G={
+  players:[],deck:[],pot:0,
+  currentBet:BOOT_START*2,round:1,
+  currentIdx:0,dealerIdx:0,
+  currentBoot:BOOT_START,   // boot the ACTIVE hand collects — set only at a hand boundary, never mid-hand
+  pendingBoot:null,         // boot queued by a 5-min escalation, waiting for the current hand to end
+  bootJustEscalated:false,  // true for the one hand right after pendingBoot is promoted (drives the "boot went up" note)
+  tournamentStart:0,        // Date.now() when the tournament clock started (PLAY VS COMPUTER) — escalation is timed off this
+  bootTimer:null,           // setInterval id watching the tournament clock for 5-min boot escalations
+  lastWinnerIdx:null,   // seat that won the previous round — becomes the next dealer
+  sideshow:null,        // {reqIdx,tgtIdx,phase:'ask'|'reveal',reqWins} while a sideshow is being asked / shown / resolved (table is paused)
+  ssAskedSeat:-1,       // seat that has already asked for a sideshow this turn — only ONE ask per turn (whatever the answer)
+  ssAskDenied:false,    // …and whether that ask was denied (only used to word the button / message)
+  sideshowTimer:null,   // auto-resolve timer for sideshows that don't involve you
+  handId:0,             // bumps every deal, so the big cards only re-animate when the hand really changes
+  pendingSeat:null,     // seat to move you to once the current sideshow / winner screen is over
+  bigCardsKey:null,     // what the big-card tray is currently showing (avoids rebuilding it on every render)
+  botTimer:null,        // pending bot-turn timeout (cleared on fold / round end so nothing stale fires)
+  headsUp:0,            // bot decisions taken while only two players are left (drives bot SHOW)
+  roundOver:false,
+  showdown:false,       // how the round ended: true = SHOW (hands revealed), false = everyone else packed (winner's hand stays hidden)
+  gameOver:false,       // true once only ONE seat can still pay the boot — no more rounds are dealt
+  kingIdx:null,         // that last seat (the King of the table)
+  timerLeft:28,timerInt:null,
+  timerOn:false,        // is a turn clock actually counting down right now?
+  sid:0                 // table-session counter: bumps when you Exit Table, so callbacks queued at the old table never fire
+};
+
+// ═══════════════════════
+// BOOT ESCALATION
+// ═══════════════════════
+// Boot is a pure function of tournament-elapsed time: ₹10 at 0:00, doubling every 5 minutes,
+// capped at ₹640 (reached at 30:00 and held there forever).
+function scheduledBoot(elapsedMs){
+  const level=Math.floor(elapsedMs/BOOT_ESCALATE_MS);
+  return Math.min(BOOT_START*Math.pow(2,level), MAX_BOOT);
+}
+
+// Ticks once a second off the real tournament clock — completely independent of hands/rounds.
+// If elapsed time has crossed into a new boot level, the new amount is queued as pendingBoot.
+// This NEVER touches currentBoot, so a hand already in progress keeps playing at the boot it
+// started with — the new amount only takes effect once that hand ends (see startRound()).
+function checkBootEscalation(){
+  if(G.gameOver||G.currentBoot>=MAX_BOOT){ clearInterval(G.bootTimer); G.bootTimer=null; return; }  // capped or table's done — stop for good
+  const target=scheduledBoot(Date.now()-G.tournamentStart);
+  if(target>G.currentBoot && G.pendingBoot!==target) G.pendingBoot=target;
+}
+
+// Reflects the boot actually in force right now in the room-info strip.
+function updateBootDisplay(){
+  const el=document.getElementById('room-bet');
+  if(el) el.textContent=`₹${G.currentBoot} / No Limit`;
+}
+
+// ═══════════════════════
+// DECK
+// ═══════════════════════
+function mkDeck(){
+  let d=[];
+  for(let s=0;s<4;s++) for(let r=2;r<=14;r++) d.push({r,s});
+  for(let i=d.length-1;i>0;i--){const j=0|Math.random()*(i+1);[d[i],d[j]]=[d[j],d[i]];}
+  return d;
+}
+function draw(){return G.deck.pop();}
+
+// ═══════════════════════
+// HAND EVAL
+// ═══════════════════════
+function evalHand(hand){
+  const r=hand.map(c=>c.r).sort((a,b)=>b-a);
+  const ss=hand.every(c=>c.s===hand[0].s);
+  if(r[0]===r[1]&&r[1]===r[2]) return{t:6,lab:'TRAIL',   vals:r};
+  const[sq,hi]=isSeq(r);
+  if(ss&&sq) return{t:5,lab:'PURE SEQUENCE',vals:[hi]};
+  if(sq)     return{t:4,lab:'SEQUENCE',     vals:[hi]};
+  if(ss)     return{t:3,lab:'COLOR',        vals:r};
+  if(r[0]===r[1]) return{t:2,lab:'PAIR',vals:[r[0],r[2]]};
+  if(r[1]===r[2]) return{t:2,lab:'PAIR',vals:[r[1],r[0]]};
+  return{t:1,lab:'HIGH CARD',vals:r};
+}
+function isSeq(r){
+  if(r[0]===14&&r[1]===3&&r[2]===2) return[true,15];   // A-2-3 is the HIGHEST sequence in Teen Patti — outranks A-K-Q (14)
+  if(r[0]===r[1]+1&&r[1]===r[2]+1) return[true,r[0]];
+  return[false,0];
+}
+function cmpScore(a,b){
+  if(a.t!==b.t) return a.t-b.t;
+  for(let i=0;i<Math.max(a.vals.length,b.vals.length);i++){
+    const d=(a.vals[i]||0)-(b.vals[i]||0);
+    if(d!==0) return d;
+  }
+  return 0;
+}
+function rankStr(r){
+  return r===11?'J':r===12?'Q':r===13?'K':r===14?'A':''+r;
+}
+
+// ═══════════════════════
+// BUILD DOM SEATS
+// ═══════════════════════
+function buildSeats(){
+  const ta=document.getElementById('table-area');
+  document.querySelectorAll('.seat').forEach(e=>e.remove());
+  for(let i=0;i<NUM_SEATS;i++){
+    const div=document.createElement('div');
+    div.className='seat'+(i===LOCAL_SEAT?' me':'');
+    div.id='seat-'+i;
+    div.innerHTML=`
+      <div class="seat-avatar-wrap">
+        <img class="seat-avatar" id="av-${i}" src="${avatarURI(i)}">
+        <div id="status-${i}" class="seat-status blind">BLIND</div>
+        <div id="dealer-${i}" class="dealer-btn" style="display:none">D</div>
+        <div id="timer-${i}" class="turn-timer">28</div>
+      </div>
+      <div class="seat-info">
+        <div class="seat-name" id="name-${i}">${seatName(i)}</div>
+        <div class="seat-chips" id="chips-${i}">${START_CHIPS[i]}</div>
+      </div>
+      <div class="seat-cards" id="cards-${i}"></div>
+      <div class="seat-bet" id="bet-${i}" style="display:none"></div>
+    `;
+    ta.appendChild(div);
+  }
+  placeSeats();
+}
+
+// Puts every seat in its slot relative to the seat this screen controls.
+function placeSeats(){
+  for(let i=0;i<NUM_SEATS;i++){
+    const el=document.getElementById('seat-'+i);
+    if(el) el.style.cssText=SEAT_STYLES[slotOf(i)]+';position:absolute;';
+  }
+}
+
+// ═══════════════════════
+// ANIMATIONS — deal / chip toss
+// ═══════════════════════
+// Cards are dealt clockwise, starting with the seat to the dealer's left.
+function dealOrder(){
+  const order=[];
+  let i=nextSeat(G.dealerIdx);
+  for(let k=0;k<NUM_SEATS;k++){ if(!G.players[i].folded) order.push(i); i=nextSeat(i); }
+  return order;   // players sitting out (can't afford the boot) are skipped
+}
+
+function animateDealCards(cb){
+  const ta=document.getElementById('table-area');
+  const fx=document.getElementById('fx-layer');
+  const potEl=document.getElementById('pot-area');
+  if(!ta||!fx||!potEl){ if(cb) cb(); return; }
+  const taRect=ta.getBoundingClientRect();
+  const potRect=potEl.getBoundingClientRect();
+  const startX=potRect.left+potRect.width/2-taRect.left;
+  const startY=potRect.top+potRect.height/2-taRect.top;
+
+  const sid=G.sid;
+  let cardIdx=0;
+  const order=dealOrder();
+  for(let round=0;round<3;round++){
+    for(let k=0;k<order.length;k++){
+      const delay=cardIdx*65;
+      const seatId=order[k];
+      setTimeout(()=>{
+        const seatEl=document.getElementById('seat-'+seatId);
+        if(!seatEl) return;
+        const sRect=seatEl.getBoundingClientRect();
+        const tx=sRect.left+sRect.width/2-taRect.left;
+        const ty=sRect.top+sRect.height/2-taRect.top;
+        const card=document.createElement('div');
+        card.className='fly-card';
+        card.style.left=startX+'px';
+        card.style.top=startY+'px';
+        fx.appendChild(card);
+        playCardSound();
+        requestAnimationFrame(()=>{
+          card.style.transform=`translate(${tx-startX}px,${ty-startY}px) rotate(${Math.round(Math.random()*40-20)}deg)`;
+          card.style.opacity='0.95';
+        });
+        setTimeout(()=>card.remove(),400);
+      },delay);
+      cardIdx++;
+    }
+  }
+  setTimeout(()=>{ if(sid!==G.sid) return; render(); if(cb) cb(); }, cardIdx*65+430);   // (sid check: you left the table mid-deal)
+}
+
+function tossChip(seatIdx,amount){
+  if(!amount) return;
+  const ta=document.getElementById('table-area');
+  const seatEl=document.getElementById('seat-'+seatIdx);
+  const potEl=document.getElementById('pot-area');
+  const fx=document.getElementById('fx-layer');
+  if(!ta||!seatEl||!potEl||!fx) return;
+  const taRect=ta.getBoundingClientRect();
+  const sRect=seatEl.getBoundingClientRect();
+  const pRect=potEl.getBoundingClientRect();
+  const sx=sRect.left+sRect.width/2-taRect.left;
+  const sy=sRect.top+sRect.height/2-taRect.top;
+  const px=pRect.left+pRect.width/2-taRect.left;
+  const py=pRect.top+pRect.height/2-taRect.top;
+  const chipCount=Math.min(3,1+Math.floor(amount/150));
+  for(let i=0;i<chipCount;i++){
+    setTimeout(()=>{
+      const chip=document.createElement('div');
+      chip.className='fly-chip';
+      chip.style.left=sx+'px'; chip.style.top=sy+'px';
+      chip.style.setProperty('--dx',(px-sx)+'px');
+      chip.style.setProperty('--dy',(py-sy)+'px');
+      fx.appendChild(chip);
+      void chip.offsetWidth;                     // flush styles so the flight always animates (bot moves come from timers, not a tap)
+      requestAnimationFrame(()=>chip.classList.add('flying'));
+      setTimeout(()=>chip.remove(),760);
+    },i*55);
+  }
+  // pot label pops when the last chip lands
+  const lbl=document.getElementById('pot-label');
+  if(lbl) setTimeout(()=>{ lbl.classList.remove('pot-hit'); void lbl.offsetWidth; lbl.classList.add('pot-hit'); },(chipCount-1)*55+620);
+  playChipSound(amount);
+}
+
+function potToSeat(seatIdx){
+  const ta=document.getElementById('table-area');
+  const seatEl=document.getElementById('seat-'+seatIdx);
+  const potEl=document.getElementById('pot-area');
+  const fx=document.getElementById('fx-layer');
+  if(!ta||!seatEl||!potEl||!fx) return;
+  const taRect=ta.getBoundingClientRect();
+  const sRect=seatEl.getBoundingClientRect();
+  const pRect=potEl.getBoundingClientRect();
+  const sx=sRect.left+sRect.width/2-taRect.left;
+  const sy=sRect.top+sRect.height/2-taRect.top;
+  const px=pRect.left+pRect.width/2-taRect.left;
+  const py=pRect.top+pRect.height/2-taRect.top;
+  for(let i=0;i<5;i++){
+    setTimeout(()=>{
+      const chip=document.createElement('div');
+      chip.className='fly-chip';
+      chip.style.left=px+'px'; chip.style.top=py+'px';
+      chip.style.setProperty('--dx',(sx-px)+'px');
+      chip.style.setProperty('--dy',(sy-py)+'px');
+      fx.appendChild(chip);
+      void chip.offsetWidth;
+      requestAnimationFrame(()=>chip.classList.add('flying'));
+      setTimeout(()=>chip.remove(),760);       // (same flight time as a bet chip — see .fly-chip)
+    },i*60);
+  }
+}
+
+// ═══════════════════════
+// WHICH SEAT IS "ME" ON THIS SCREEN
+// ═══════════════════════
+// Everything you see and press (big cards, action bar, turn ring, chip balance, "YOU" label, table rotation)
+// is derived from LOCAL_SEAT, so ANY seat can be the local one and gets exactly the same experience.
+// Seat control flag: p.isBot=false → driven by this screen's buttons (or, later, by that player's own device).
+function setLocalSeat(n){
+  const old=LOCAL_SEAT;
+  LOCAL_SEAT=n;
+  if(G.players.length){ G.players[old].isBot=true; G.players[n].isBot=false; }
+  G.bigCardsKey=null;                               // force the big-card tray to redraw for the new seat
+  document.querySelectorAll('.seat').forEach(el=>el.classList.toggle('me',el.id==='seat-'+n));
+  placeSeats();
+}
+function applyPendingSeat(){
+  if(G.pendingSeat==null) return;
+  const n=G.pendingSeat; G.pendingSeat=null;
+  if(n!==LOCAL_SEAT) setLocalSeat(n);
+}
+// Take over another seat (also: open the page with ?seat=N). The seat you leave is played by the bot brain.
+function switchSeat(n){
+  n=+n;
+  if(!Number.isInteger(n)||n<0||n>=NUM_SEATS||n===LOCAL_SEAT) return false;
+  if(!G.players.length){ LOCAL_SEAT=n; return true; }        // game not started yet
+  if(G.sideshow||G.roundOver){                                // don't change the view mid-reveal / on the winner screen
+    G.pendingSeat=n;
+    msg(`Moving you to ${NAMES[n]}'s seat…`);
+    return 'queued';
+  }
+  setLocalSeat(n);
+  clearTimeout(G.botTimer);
+  if(G.players[G.currentIdx].isBot) scheduleBot(600+Math.random()*500);   // hand the running turn to the right controller
+  render();
+  if(G.currentIdx===n) paintTurnRing();
+  msg(`You are now ${NAMES[n]}.`);
+  return true;
+}
+
+// ═══════════════════════
+// INIT / NEW ROUND
+// ═══════════════════════
+function initPlayers(){
+  G.players=NAMES.map((n,i)=>({
+    name:n,chips:START_CHIPS[i],isBot:i!==LOCAL_SEAT,
+    folded:false,hand:[],
+    seen:false,   // has the player looked at cards
+    bet:0
+  }));
+  const pa=document.getElementById('profile-avatar');
+  if(pa) pa.src=avatarURI(LOCAL_SEAT);
+}
+
+// ═══════════════════════
+// AUTO-CONTINUE — overlays close themselves after a few seconds if you don't press the button
+// ═══════════════════════
+const AUTO_CONTINUE_SECS=5;
+const SIDESHOW_REQ_SECS=5;             // how long the asked player has to answer a sideshow request
+const KING_EXIT_SECS=10;               // game over: how long the King screen stays up before everyone is sent back to the main menu
+const SIDESHOW_TIMEOUT_ACCEPTS=false;  // no answer in time: false = the request lapses (denied), true = it is accepted
+const AUTO_UI={
+  // the next round is NOT pressable — just a countdown with a draining bar, then it starts by itself
+  round:{txt:'nr-text',label:'NEXT ROUND',fmt:n=>`NEXT ROUND IN ${n}`,bar:'nr-bar-fill'},
+  // the sideshow reveal keeps its CONTINUE button, which also auto-presses itself
+  ss:   {txt:'btn-ss-continue',label:'CONTINUE',fmt:n=>`CONTINUE (${n})`},
+  // game over: "Exiting the table in 10, 9, …" with a draining bar, then back to the main menu
+  king: {txt:'king-exit-text',label:'EXITING THE TABLE',fmt:n=>`EXITING THE TABLE IN ${n}`,bar:'king-bar-fill'},
+  // the sideshow request: a short countdown with a draining bar, then the request lapses
+  ssreq:{txt:'ssq-count',label:String(SIDESHOW_REQ_SECS),fmt:n=>String(n),bar:'ssq-bar-fill'}
+};
+const autoTimers={};
+
+function startAutoContinue(key,fn,secs=AUTO_CONTINUE_SECS){
+  stopAutoContinue(key);
+  const ui=AUTO_UI[key];
+  const el=document.getElementById(ui.txt);
+  let left=secs;
+  const paint=()=>{ if(el) el.textContent=ui.fmt(left); };
+  paint();
+  if(ui.bar){
+    const bar=document.getElementById(ui.bar);
+    if(bar){ bar.style.animation='none'; void bar.offsetWidth; bar.style.animation=`nrDrain ${secs}s linear forwards`; }
+  }
+  autoTimers[key]=setInterval(()=>{
+    left--;
+    if(left<=0){ stopAutoContinue(key); fn(); }   // time's up → carry on
+    else paint();
+  },1000);
+}
+function stopAutoContinue(key){
+  clearInterval(autoTimers[key]);
+  autoTimers[key]=null;
+  const ui=AUTO_UI[key];
+  const el=document.getElementById(ui.txt);
+  if(el) el.textContent=ui.label;
+  if(ui.bar){ const bar=document.getElementById(ui.bar); if(bar) bar.style.animation='none'; }
+}
+
+function newRound(){
+  if(!G.roundOver||G.gameOver) return;   // safety: only start a new round once the previous one has ended — and never after the game is won
+  stopAutoContinue('round');
+  document.getElementById('winner-overlay').classList.remove('show');
+  G.round++;
+  // the winner of the previous round becomes the dealer
+  if(G.lastWinnerIdx!==null){
+    let d=G.lastWinnerIdx, tries=0;
+    while(G.players[d].standing&&tries++<NUM_SEATS) d=nextSeat(d);   // a seat that stood up can't deal — the button moves on
+    G.dealerIdx=d;
+  }
+  startRound();
+}
+
+function startRound(){
+  applyPendingSeat();
+  stopTurnTimer();
+  clearTimeout(G.botTimer);
+  clearTimeout(G.sideshowTimer);
+  ensureAudio();
+  G.deck=mkDeck();
+  G.handId++;
+  G.sideshow=null;
+  G.ssAskedSeat=-1; G.ssAskDenied=false;
+  stopAutoContinue('ss'); stopAutoContinue('round'); stopAutoContinue('ssreq'); stopAutoContinue('king');
+  document.getElementById('sideshow-overlay').classList.remove('show');
+  document.getElementById('ssreq-overlay').classList.remove('show');
+
+  // ── BOOT ESCALATION — this is the only place currentBoot is allowed to change ──
+  // We're between hands right now, so this is the one safe moment to promote a queued escalation.
+  G.bootJustEscalated=false;
+  if(G.pendingBoot!==null){
+    G.currentBoot=G.pendingBoot;
+    G.pendingBoot=null;
+    G.bootJustEscalated=true;
+    updateBootDisplay();
+  }
+
+  G.pot=0;G.currentBet=G.currentBoot*2;
+  G.roundOver=false;
+  G.showdown=false;
+  G.headsUp=0;
+
+  G.players.forEach(p=>{
+    p.hand=[];p.seen=false;p.bet=0;
+    p.folded=p.standing||p.chips<G.currentBoot;     // stood up, or can't afford the boot → sits this round out
+    if(!p.folded){p.chips-=G.currentBoot;G.pot+=G.currentBoot;}
+  });
+
+  // deal 3 cards each, clockwise, starting with the seat to the dealer's left
+  const order=dealOrder();
+  for(let n=0;n<3;n++) order.forEach(i=>G.players[i].hand.push(draw()));
+
+  // play runs clockwise: action starts on the seat to the dealer's left
+  // and skips anyone sitting out (couldn't afford the boot)
+  let idx=nextSeat(G.dealerIdx), tries=0;
+  while(G.players[idx].folded && tries<NUM_SEATS){ idx=nextSeat(idx); tries++; }
+  G.currentIdx=idx;
+
+  const dealerName=seatName(G.dealerIdx);
+  const firstName=seatName(idx);
+  const bootNote=G.bootJustEscalated?` · 🔺 Boot up to ₹${G.currentBoot}!`:` · Boot ₹${G.currentBoot}`;
+  msg(`Round ${G.round}: ${G.dealerIdx===LOCAL_SEAT?'You deal':dealerName+' deals'} (${G.round===1?'random draw':'last winner'}) · ${idx===LOCAL_SEAT?'You play':firstName+' plays'} first ↻${bootNote}`);
+
+  render();
+  animateDealCards(()=>{
+    if(packIfBroke(G.currentIdx)) return;    // first to act can't even afford the blind → packed, next seat is up
+    beginTurn(700+Math.random()*700);        // same start-of-turn for every seat (a bot waits this long before acting)
+  });
+}
+
+// ═══════════════════════
+// RENDER
+// ═══════════════════════
+function render(){
+  document.getElementById('pot-val').textContent=G.pot.toLocaleString();
+  // top-bar balance = your total available chips (what's left in your stack, i.e. not in the pot)
+  const coinsEl=document.getElementById('coins-val');
+  if(coinsEl&&G.players[LOCAL_SEAT]) coinsEl.textContent=G.players[LOCAL_SEAT].chips.toLocaleString();
+  renderPotChips();
+  const swEl=document.getElementById('seat-switch-name');
+  if(swEl) swEl.textContent=NAMES[LOCAL_SEAT];
+  const pcEl=document.getElementById('players-count');            // people actually sitting at the table (spectators aren't)
+  if(pcEl) pcEl.textContent='👥 '+G.players.filter(q=>!q.standing).length+'/'+NUM_SEATS;
+
+  G.players.forEach((p,i)=>{
+    // seat class
+    const seat=document.getElementById('seat-'+i);
+    if(!seat) return;
+    seat.className='seat'+(i===LOCAL_SEAT?' me':'')+(p.folded?' folded':'')+(p.standing?' standing':'')+(G.currentIdx===i&&!G.roundOver?' active-turn':'');
+    const nameEl=document.getElementById('name-'+i);
+    if(nameEl) nameEl.textContent=seatName(i);
+
+    document.getElementById('chips-'+i).textContent='₹'+p.chips.toLocaleString();
+
+    // blind / seen status — visible for every player
+    const st=document.getElementById('status-'+i);
+    if(st){
+      let cls,txt;
+      if(p.standing){ cls='out'; txt='WATCHING'; }                    // stood up: out of the game, still in the room
+      else if(p.folded){ cls=p.hand.length?'packed':'out'; txt=p.hand.length?'PACKED':'OUT'; }  // OUT = sat the round out (couldn't afford the boot)
+      else if(p.seen){ cls='seen'; txt='SEEN'; }
+      else { cls='blind'; txt='BLIND'; }
+      st.className='seat-status '+cls;
+      st.textContent=txt;
+    }
+
+    // dealer btn
+    const db=document.getElementById('dealer-'+i);
+    if(db) db.style.display=i===G.dealerIdx?'flex':'none';
+
+    // cards
+    const cd=document.getElementById('cards-'+i);
+    if(cd){
+      if(G.roundOver&&G.showdown&&!p.folded&&i!==LOCAL_SEAT){
+        cd.innerHTML=p.hand.map(c=>{
+          const red=RED_S.includes(c.s);
+          return`<div class="card-mini-face ${red?'red':'black'}">${rankStr(c.r)}<br>${SUITS_SYM[c.s]}</div>`;
+        }).join('');
+      } else if(p.folded){
+        cd.innerHTML='';
+      } else {
+        cd.innerHTML=p.hand.map(()=>'<div class="card-back-sm"></div>').join('');
+      }
+    }
+
+    // bet display
+    const bd=document.getElementById('bet-'+i);
+    if(bd){
+      if(p.bet>0&&!p.folded){
+        bd.style.display='inline-flex';
+        bd.textContent=p.bet;
+        const bc=SEAT_CHIP_COLORS[i%SEAT_CHIP_COLORS.length];
+        bd.style.setProperty('--chip-c',bc[0]);
+        bd.style.setProperty('--chip-d',bc[1]);
+      } else {
+        bd.style.display='none';
+      }
+    }
+
+    // timer
+    const td=document.getElementById('timer-'+i);
+    if(td&&G.currentIdx===i&&!G.roundOver){
+      td.textContent=G.timerLeft;
+    }
+  });
+
+  // player big cards
+  renderPlayerBigCards();
+  updateActionBar();
+}
+
+function renderPlayerBigCards(){
+  const p=G.players[LOCAL_SEAT];
+  const el=document.getElementById('player-cards-big');
+  if(!el) return;
+
+  const hnd=document.getElementById('hand-name-display');
+  // face-up once you've looked, or at a real showdown (every other seat's cards flip then too).
+  // If everyone else packed, the winner isn't made to show — an unseen hand stays face-down.
+  const faceUp=p.seen||(G.roundOver&&G.showdown&&!p.folded&&p.hand.length>0);
+
+  // render() runs on every turn change. Rebuilding the cards each time restarted their deal/flip
+  // animation, which made them blink. Only touch the DOM when what's on screen actually changes:
+  // a new deal, you press SEE (flip once), or you fold.
+  const key=(p.folded||p.hand.length===0)?'none'
+    :!faceUp?`${G.handId}|blind|${p.hand.length}`
+    :`${G.handId}|seen|${p.hand.map(c=>c.r+'.'+c.s).join(',')}`;
+
+  if(key!==G.bigCardsKey){
+    G.bigCardsKey=key;
+    if(key==='none'){
+      el.innerHTML='';
+    } else if(!faceUp){
+      el.innerHTML=p.hand.map(()=>`<div class="play-card-big blind-card deal-in"></div>`).join('');
+    } else {
+      el.innerHTML=p.hand.map((c,idx)=>{
+        const red=RED_S.includes(c.s);
+        const badge=(idx===0&&p.seen)?'<div class="seen-badge">SEEN</div>':'';
+        return`<div class="play-card-big flip-in ${red?'red':'black'}">${badge}
+          <div class="big-rank">${rankStr(c.r)}</div>
+          <div class="big-suit">${SUITS_SYM[c.s]}</div>
+        </div>`;
+      }).join('');
+    }
+  }
+
+  // hand-name label (cheap text update, no animation)
+  if(hnd){
+    if(key==='none'||!faceUp){ hnd.style.display='none'; }
+    else { hnd.textContent=evalHand(p.hand).lab; hnd.style.display='block'; }
+  }
+}
+
+function renderPotChips(){
+  const el=document.getElementById('pot-chips-visual');
+  if(!el) return;
+  // [bright face, dark rim] pairs — red / blue / purple / orange / green casino chips
+  const colors=[
+    ['#f23843','#8a0d16'],
+    ['#0d8bf0','#03356b'],
+    ['#a52bd6','#4a1568'],
+    ['#f0940c','#8a4e06'],
+    ['#16bd63','#0a5c30'],
+  ];
+  const stacks=Math.min(5,Math.ceil(G.pot/200));
+  let html='';
+  for(let i=0;i<stacks;i++){
+    const[c,d]=colors[i%colors.length];
+    html+=`<div class="chip-stack"><div class="chip-stack-inner" style="--chip-c:${c};--chip-d:${d}"></div></div>`;
+  }
+  el.innerHTML=html;
+}
+
+// ═══════════════════════
+// ACTION BAR STATE
+// ═══════════════════════
+// ═══════════════════════
+// THE RULEBOOK — what any seat may do right now
+// ═══════════════════════
+// One source of truth for "can seat X do Y?". The action bar greys buttons from it, the bots choose from it,
+// and performAction() refuses anything it doesn't allow — so no seat can ever do something another seat can't.
+function availableActions(idx){
+  const p=G.players[idx];
+  const a={pack:false,see:false,blind:false,chaal:false,raise:false,show:false,sideshow:false,
+           myTurn:false,inHand:G.players.filter(x=>!x.folded).length,
+           raiseBet:0,raisePay:0,sideshowTarget:-1,ssUsed:false,ssDenied:false,ssBroke:false};
+  if(!p) return a;
+  // RAISE ×2 — doubles the table stake, no cap. Pay the new stake if seen, half of it if blind.
+  a.raiseBet=G.currentBet*2;
+  a.raisePay=p.seen?a.raiseBet:Math.floor(a.raiseBet/2);
+  if(p.folded||G.roundOver) return a;
+
+  a.see=!p.seen;                                    // SEE is a peek: any time you're in the hand — not gated to your turn, and it works while a sideshow is going on too
+  if(G.sideshow) return a;                          // …but every other move waits while a sideshow is being asked / settled
+  if(G.currentIdx!==idx) return a;                  // everything below needs it to be your turn
+
+  a.myTurn=true;
+  a.pack=true;
+  a.blind=!p.seen;                                  // blind only while unseen
+  a.chaal=p.seen;                                   // call only once seen
+  a.raise=a.raiseBet>G.currentBet&&p.chips>=a.raisePay;
+  a.show=a.inHand===2;                              // SHOW only with exactly 2 players left
+  a.sideshowTarget=sideshowTarget(idx);
+  a.ssUsed=G.ssAskedSeat===idx;                     // one sideshow ask per turn — accepted, denied or lapsed, it's used up
+  a.ssDenied=a.ssUsed&&G.ssAskDenied;
+  // a sideshow can only be asked by a seat that can afford it: it must be able to pay what this turn costs (the full stake once seen)
+  a.ssBroke=p.seen&&a.sideshowTarget>=0&&!a.ssUsed&&p.chips<moveCost(p);
+  a.sideshow=p.seen&&a.sideshowTarget>=0&&!a.ssUsed&&!a.ssBroke;
+  return a;
+}
+
+// ═══════════════════════
+// ACTION BAR STATE (your buttons)
+// ═══════════════════════
+function updateActionBar(){
+  const p=G.players[LOCAL_SEAT];
+  const a=availableActions(LOCAL_SEAT);
+  const dis=(id,off)=>{const b=document.getElementById(id); if(b) b.disabled=off;};
+  const txt=(id,v)=>{const e=document.getElementById(id); if(e) e.textContent=v;};
+
+  const bar=document.getElementById('action-bar');
+  if(bar) bar.classList.toggle('spectating',!!p.standing);
+  dis('btn-pack',!a.pack);
+  dis('btn-see',!a.see);
+  dis('btn-blind',!a.blind);
+  dis('btn-chaal',!a.chaal);
+  dis('btn-raise',!a.raise);
+  dis('btn-show',!a.show);
+
+  const blindAmt=Math.floor(G.currentBet/2);
+  const chaalAmt=G.currentBet;
+  txt('blind-amt','₹'+blindAmt);
+  txt('chaal-amt','₹'+chaalAmt);
+  txt('raise-amt','₹'+a.raisePay);
+  txt('show-amt','₹'+Math.min(moveCost(p),p.chips));
+
+  const ss=document.getElementById('btn-sideshow');
+  if(ss){
+    const lab=document.getElementById('ss-btn-label');
+    if(a.sideshow){
+      ss.style.display='block';
+      ss.disabled=false;
+      if(lab) lab.textContent='SIDESHOW WITH '+seatName(a.sideshowTarget).toUpperCase();
+    } else if(a.myTurn&&a.ssUsed&&a.sideshowTarget>=0){     // already asked this turn — one sideshow per turn
+      ss.style.display='block';
+      ss.disabled=true;
+      if(lab) lab.textContent=a.ssDenied?'SIDESHOW DENIED · MAKE YOUR MOVE':'ONE SIDESHOW PER TURN · MAKE YOUR MOVE';
+    } else if(a.myTurn&&a.ssBroke){                          // can't afford it — greyed out
+      ss.style.display='block';
+      ss.disabled=true;
+      if(lab) lab.textContent='SIDESHOW · NOT ENOUGH CHIPS';
+    } else if(a.myTurn&&a.inHand===2){              // heads-up: sideshow is greyed out, SHOW takes its place
+      ss.style.display='block';
+      ss.disabled=true;
+      if(lab) lab.textContent='SIDESHOW OFF · 2 LEFT, USE SHOW';
+    } else {
+      ss.style.display='none';
+    }
+  }
+
+  // HUD
+  const hud=document.getElementById('your-turn-hud');
+  const hudAmt=document.getElementById('hud-call-amt');
+  if(a.myTurn){
+    hud.classList.add('show');
+    hudAmt.classList.add('show');
+    hudAmt.textContent=(p.seen?'Call ₹':'Blind ₹')+(p.seen?chaalAmt:blindAmt);
+  } else {
+    hud.classList.remove('show');
+    hudAmt.classList.remove('show');
+  }
+}
+
+// Sideshow is only possible with the player immediately before the asker in the turn order
+// (the player on their right). Players who have packed are out of the hand, so they're skipped —
+// but the first player still in the hand can NOT be skipped: if they are blind (haven't seen
+// their cards) there is no sideshow at all, not even with someone further along.
+// Returns that player's seat, or -1 when a sideshow isn't possible.
+function sideshowTarget(idx){
+  if(G.players.filter(x=>!x.folded).length<=2) return -1;   // with 2 players left you use SHOW instead
+  let t=prevSeat(idx);
+  for(let tries=0;tries<NUM_SEATS-1;tries++){
+    const o=G.players[t];
+    if(!o.folded) return o.seen?t:-1;       // immediate player still in: must be seen, otherwise no sideshow
+    t=prevSeat(t);
+  }
+  return -1;
+}
+
+// ═══════════════════════
+// PLAYER ACTIONS — one engine for EVERY seat
+// ═══════════════════════
+const seatLabel=idx=>idx===LOCAL_SEAT?'You':NAMES[idx];      // for sentences ("You CALLED…" / "Priya CALLED…")
+
+// Moves chips from a seat into the pot (never more than the seat has). Returns what was actually paid.
+function payIn(idx,amount){
+  const p=G.players[idx];
+  amount=Math.max(0,Math.min(amount,p.chips));
+  if(amount<=0) return 0;
+  p.chips-=amount;G.pot+=amount;p.bet+=amount;
+  tossChip(idx,amount);
+  return amount;
+}
+
+// The buttons call this for YOU. Bots call performAction() directly for themselves. A remote player would too.
+function doAction(type){
+  ensureAudio();
+  performAction(LOCAL_SEAT,type);
+}
+
+// type: 'pack' | 'see' | 'blind' | 'chaal' | 'raise' | 'show' | 'sideshow'
+// Returns true if the action was carried out.
+function performAction(idx,type){
+  const p=G.players[idx];
+  if(!p) return false;
+  const a=availableActions(idx);
+  if(!a[type]){ if(idx===LOCAL_SEAT) explainDenied(type,a); return false; }
+  const who=seatLabel(idx);
+
+  // SEE is a peek at your own cards — allowed any time, doesn't cost anything
+  // and doesn't consume your turn. This is what lets you decide pack vs chaal/call.
+  if(type==='see'){
+    p.seen=true;
+    playPeekSound();
+    if(idx===LOCAL_SEAT) msg('You looked at your cards.');
+    // once seen you owe the full stake — if it's your turn and you can't cover it, you're packed automatically
+    if(G.currentIdx===idx&&packIfBroke(idx)) return true;
+    render();
+    return true;
+  }
+
+  if(type==='pack'){
+    foldPlayer(idx,`${who} PACKED.`);         // instant: fold, then the game moves on to the next player
+    return true;
+  }
+  if(packIfBroke(idx)) return true;           // can't pay for the move you picked → packed automatically instead
+
+  if(type==='blind'){
+    const cost=payIn(idx,Math.floor(G.currentBet/2));
+    msg(`${who} bet BLIND ₹${cost}.`);
+    advance();
+  } else if(type==='chaal'){
+    const cost=payIn(idx,G.currentBet);
+    msg(`${who} CALLED ₹${cost}.`);
+    advance();
+  } else if(type==='raise'){
+    G.currentBet=a.raiseBet;                  // stake doubles for everyone behind you
+    payIn(idx,a.raisePay);
+    msg(`${who} RAISED ×2 — stake is now ₹${a.raiseBet}.`);
+    advance();
+  } else if(type==='show'){
+    // SHOW ends the round by comparing hands, and is only allowed with exactly 2 players left.
+    // Whoever asks pays the current stake (half if still blind).
+    const cost=payIn(idx,moveCost(p));
+    playShowSound();
+    msg(`${who} called SHOW${cost>0?' (₹'+cost+')':''}.`);
+    resolveRound(idx);                        // pass the caller: on a tie the one who called SHOW loses
+  } else if(type==='sideshow'){
+    requestSideshow(idx,a.sideshowTarget);     // not automatic any more: the asked player can accept or deny
+  }
+  return true;
+}
+
+// Tells YOU why a button press did nothing (bots just pick something else).
+function explainDenied(type,a){
+  if(!a.myTurn) return;
+  const p=G.players[LOCAL_SEAT];
+  if(type==='blind') msg('You are already seen — use CALL.');
+  else if(type==='chaal') msg('Look at your cards first — use BLIND, or press SEE.');
+  else if(type==='raise') msg('Not enough chips to raise.');
+  else if(type==='show') msg('SHOW is only allowed when 2 players are left.');
+  else if(type==='sideshow'){
+    if(a.ssDenied) msg('Your sideshow request was denied — make your move.');
+    else if(a.ssUsed) msg('Only one sideshow per turn — make your move.');
+    else if(a.ssBroke) msg(`Not enough chips to ask for a sideshow — you need ₹${moveCost(p)} to stay in.`);
+    else if(a.inHand<=2) msg('Only 2 players are left — use SHOW instead of a sideshow.');
+    else if(!p.seen) msg('Look at your cards first to ask for a sideshow.');
+    else msg('No sideshow: it is only allowed with the player right before you, and only if they have seen their cards.');
+  }
+}
+
+function ssCardsHTML(hand){
+  return hand.map(c=>{
+    const red=RED_S.includes(c.s);
+    return`<div class="winner-card ${red?'red':'black'}">
+      <div style="font-size:1rem;font-weight:700">${rankStr(c.r)}</div>
+      <div style="font-size:0.85rem">${SUITS_SYM[c.s]}</div>
+    </div>`;
+  }).join('');
+}
+
+// ═══════════════════════
+// SIDESHOW — any seat can ask the seat before it, and that seat can accept or deny
+// ═══════════════════════
+// Step 0 — a seat ASKS. The table pauses and the asked seat answers:
+//   • you are asked  → a popup with ACCEPT / DENY; no answer within SIDESHOW_REQ_SECS and the request lapses.
+//   • a bot is asked → it answers on its own after a moment (you see a "waiting…" popup if it was YOU who asked).
+//   • DENY / lapse   → nothing is revealed and nobody folds; the asker still has to make a normal move this turn.
+//   • ACCEPT         → carries on to the compare below.
+// WHO SEES WHAT: the whole table is told a sideshow is going on (asked / accepted / denied / who folded) — that's how the
+// other players know about it — but the popups and the CARDS are only for the two seats involved.
+// TIME: the asker's turn clock keeps running the whole way through. The request, the reveal and the asker's move afterwards
+// all have to fit inside their normal turn time; if it runs out mid-sideshow the sideshow is dropped and the asker packs.
+function requestSideshow(reqIdx,tgtIdx){
+  G.sideshow={reqIdx,tgtIdx,phase:'ask'};
+  G.ssAskedSeat=reqIdx; G.ssAskDenied=false;       // this turn's one sideshow ask is now spent (the turn clock keeps running)
+  clearTimeout(G.sideshowTimer);
+  playCardSound();
+
+  const reqName=seatName(reqIdx), tgtName=seatName(tgtIdx);
+  const tgtIsHuman=!G.players[tgtIdx].isBot;
+  const box=document.getElementById('ssreq-box');
+  const setTxt=(id,v)=>{const e=document.getElementById(id); if(e) e.textContent=v;};
+
+  if(tgtIsHuman||reqIdx===LOCAL_SEAT){
+    box.classList.toggle('waiting',!tgtIsHuman);
+    if(tgtIsHuman){
+      setTxt('ssq-title','SIDESHOW REQUEST');
+      setTxt('ssq-text',`${reqName} asks you for a SIDESHOW`);
+      setTxt('ssq-sub',`Both hands get compared and the lower one packs (on a tie, the one who asked packs). `+
+                       (SIDESHOW_TIMEOUT_ACCEPTS?'No answer = accepted.':'No answer = denied.'));
+      setTxt('ssq-timer-pre','Answer within');
+      msg(`${reqName} asks YOU for a SIDESHOW — accept or deny.`);
+    } else {
+      setTxt('ssq-title','SIDESHOW REQUESTED');
+      setTxt('ssq-text',`Waiting for ${tgtName} to answer…`);
+      setTxt('ssq-sub','If they deny, you carry on with a normal move.');
+      setTxt('ssq-timer-pre','Request expires in');
+      msg(`You ask ${tgtName} for a SIDESHOW…`);
+    }
+    document.getElementById('ssreq-overlay').classList.add('show');
+    startAutoContinue('ssreq',()=>respondSideshow(SIDESHOW_TIMEOUT_ACCEPTS,true),SIDESHOW_REQ_SECS);
+  } else {
+    msg(`${reqName} asks ${tgtName} for a SIDESHOW…`);
+  }
+
+  if(!tgtIsHuman) G.sideshowTimer=setTimeout(botAnswersSideshow,1200+Math.random()*2000);   // bots answer within ~1–3s
+  render();                                        // greys out the action buttons while the request is open
+}
+
+// A bot decides for itself. It judges only its OWN hand (it doesn't get to peek at the asker's): strong hands are
+// happy to be compared, weak ones tend to say no, and the aggressive personalities accept a bit more often.
+function botAnswersSideshow(){
+  const ss=G.sideshow;
+  if(!ss||ss.phase!=='ask') return;
+  const t=G.players[ss.tgtIdx];
+  if(!t||!t.isBot) return;                         // a human seat answers with its own buttons
+  const persona=BOT_PERSONA[ss.tgtIdx]||DEFAULT_PERSONA;
+  // Exact odds against this one specific asker — accepting agrees to a compare that folds you for
+  // nothing if you're behind, so a sharp player wants real numbers here, not a rough hand-category guess.
+  const winProb=exactEquityVsOne(t.hand);
+  const chance=Math.max(0.05,Math.min(0.95,0.5+(winProb-0.5)*1.3+persona.aggr*0.08-persona.tight*0.05));
+  respondSideshow(Math.random()<chance);
+}
+
+// The answer — from the ACCEPT / DENY buttons, from a bot, or from the countdown running out (timedOut=true).
+function respondSideshow(accept,timedOut){
+  const ss=G.sideshow;
+  if(!ss||ss.phase!=='ask') return;                // nothing pending (e.g. a second tap, or it already lapsed)
+  clearTimeout(G.sideshowTimer);
+  stopAutoContinue('ssreq');
+  document.getElementById('ssreq-overlay').classList.remove('show');
+
+  if(accept){ startSideshow(ss.reqIdx,ss.tgtIdx); return; }
+
+  // denied (or lapsed): no reveal, nobody folds — the asker still has to make a move this turn
+  const reqName=seatName(ss.reqIdx), tgtName=seatName(ss.tgtIdx);
+  let text;
+  if(ss.tgtIdx===LOCAL_SEAT) text=timedOut?`No answer in time — ${reqName}'s sideshow request lapsed.`:`You denied ${reqName}'s sideshow request.`;
+  else if(ss.reqIdx===LOCAL_SEAT) text=`${tgtName} DENIED your sideshow request — make your move.`;
+  else text=`${tgtName} denied ${reqName}'s sideshow request.`;
+  tn({d:0,f:300,dur:0.16,type:'sawtooth',vol:0.08});
+  G.sideshow=null;
+  G.ssAskDenied=true;                              // (the ask stays spent for this turn — no asking again after a denial)
+  msg(text);
+  resumeTurn();                                    // asker's turn carries on with the SAME clock (a bot just picks a normal move)
+}
+
+// Step 1 — the request was accepted: both hands are compared straight away (on a tie the one who ASKED loses — the accepter wins).
+//   • If YOU are one of the two, the reveal screen opens so you see both hands, and the table waits for CONTINUE.
+//   • If it's two other seats, the table just pauses for a moment, then settles it.
+function startSideshow(reqIdx,tgtIdx){
+  const req=G.players[reqIdx], tgt=G.players[tgtIdx];
+  const reqScore=evalHand(req.hand), tgtScore=evalHand(tgt.hand);
+  const reqWins=cmpScore(reqScore,tgtScore)>0;      // strictly better hand needed: a tie goes to the accepter
+  G.sideshow={reqIdx,tgtIdx,reqWins,phase:'reveal'};
+  playCardSound(); playShowSound();
+
+  if(reqIdx===LOCAL_SEAT||tgtIdx===LOCAL_SEAT){
+    const oppIdx=reqIdx===LOCAL_SEAT?tgtIdx:reqIdx;
+    const me=G.players[LOCAL_SEAT], opp=G.players[oppIdx];
+    const myScore=evalHand(me.hand), oppScore=evalHand(opp.hand);
+    const iWin=reqIdx===LOCAL_SEAT?reqWins:!reqWins;
+    const oppName=seatName(oppIdx);
+    msg(reqIdx===LOCAL_SEAT?`${oppName} ACCEPTED — SIDESHOW, cards on the table.`
+                           :`You accepted ${oppName}'s SIDESHOW — cards on the table.`);
+    document.getElementById('ss-title').textContent=reqIdx===LOCAL_SEAT?'SIDESHOW':`SIDESHOW · ${oppName.toUpperCase()} ASKED`;
+    document.getElementById('ss-opp-name').textContent=oppName;
+    document.getElementById('ss-opp-hand').textContent=oppScore.lab;
+    document.getElementById('ss-opp-cards').innerHTML=ssCardsHTML(opp.hand);
+    document.getElementById('ss-my-hand').textContent=myScore.lab;
+    document.getElementById('ss-my-cards').innerHTML=ssCardsHTML(me.hand);
+    document.getElementById('ss-opp-row').className='ss-row'+(iWin?'':' win');
+    document.getElementById('ss-my-row').className='ss-row'+(iWin?' win':'');
+    const res=document.getElementById('ss-result');
+    res.className=iWin?'win':'lose';
+    res.textContent=iWin?`You win — ${oppName} folds`:`${oppName} wins — you fold`;
+    document.getElementById('sideshow-overlay').classList.add('show');
+    startAutoContinue('ss',closeSideshow);         // carries on by itself after 5 seconds
+  } else {
+    msg(`${seatName(tgtIdx)} accepted ${seatName(reqIdx)}'s SIDESHOW…`);
+    clearTimeout(G.sideshowTimer);
+    G.sideshowTimer=setTimeout(closeSideshow,1500);
+  }
+  render();                                        // greys out the action buttons while the compare is open
+}
+
+// Step 2 — the loser folds and play carries on.
+//   • asker lost → asker packs, the turn passes to the next seat.
+//   • asker won  → the seat they asked packs, and it is still the asker's turn to bet / show — but NOT to ask again (one sideshow per turn).
+function closeSideshow(){
+  const ss=G.sideshow;
+  if(!ss||ss.phase!=='reveal') return;             // (a pending request is answered by respondSideshow, not here)
+  clearTimeout(G.sideshowTimer);
+  stopAutoContinue('ss');
+  G.sideshow=null;
+  document.getElementById('sideshow-overlay').classList.remove('show');
+
+  const winIdx=ss.reqWins?ss.reqIdx:ss.tgtIdx;
+  const loseIdx=ss.reqWins?ss.tgtIdx:ss.reqIdx;
+  const winName=seatName(winIdx), loseName=seatName(loseIdx);
+  let text;
+  if(loseIdx===LOCAL_SEAT)      text=`SIDESHOW: ${winName} wins the compare — you fold.`;
+  else if(winIdx===LOCAL_SEAT)  text=`SIDESHOW: ${loseName} folds. You win the compare!`;
+  else                          text=`SIDESHOW: ${winName} wins the compare — ${loseName} folds.`;
+
+  foldPlayer(loseIdx,text);                        // (if the asker lost, this also passes the turn on)
+  if(ss.reqWins&&!G.roundOver) resumeTurn();       // asker won: it is still their move — on the same clock
+}
+
+// After a sideshow that didn't end the asker's turn (denied, or the asker won) they carry on with the clock that was already
+// running — nothing is restarted, so the whole sideshow really does have to fit inside their turn time.
+function resumeTurn(){
+  applyPendingSeat();
+  const cur=G.players[G.currentIdx];
+  if(!cur.isBot&&!G.timerOn) startTurnTimer();     // (only if you were just moved into this seat: its clock wasn't running)
+  render();
+  if(cur.isBot) scheduleBot(G.players[LOCAL_SEAT].folded?280+Math.random()*420:400+Math.random()*500);
+}
+
+// The asker ran out of time in the middle of a sideshow: drop it (popups, timers) — the caller then packs the asker.
+function abortSideshow(){
+  clearTimeout(G.sideshowTimer);
+  stopAutoContinue('ss'); stopAutoContinue('ssreq');
+  document.getElementById('sideshow-overlay').classList.remove('show');
+  document.getElementById('ssreq-overlay').classList.remove('show');
+  G.sideshow=null;
+}
+
+// ═══════════════════════
+// BOT AI — real equity + pot odds, shaped by personality
+// ═══════════════════════
+// A champion teen patti player isn't running on gut feel about "pair vs colour" — they're pricing the hand:
+// how often does this actually win from here, and does that beat what it costs to find out? These bots do the
+// same maths a strong human does at the table: an honest win-probability for the hand (worked out exactly
+// heads-up, or by fast simulation with more players in), weighed against the pot odds this decision offers.
+// Personality then decides how a bot LEANS on that number — a tight player wants a bigger edge before it
+// calls, a bluffer is willing to gamble on a small (or even negative) one — but the number itself is real.
+
+// Every card not in `hand` is still in play somewhere — an opponent's hand, or just sitting undealt.
+// From this seat's point of view every one of those cards is equally likely to be in an opponent's hand,
+// so that's exactly the pool a fair equity estimate should draw from.
+function unseenCards(hand){
+  const used=new Set(hand.map(c=>c.r+'_'+c.s));
+  const rest=[];
+  for(let s=0;s<4;s++) for(let r=2;r<=14;r++){
+    const k=r+'_'+s;
+    if(!used.has(k)) rest.push({r,s});
+  }
+  return rest;
+}
+
+// EXACT win probability against one unknown opponent hand — there are only C(49,3)=18,424 possibilities,
+// cheap enough to check every single one rather than estimate. Used for anything genuinely heads-up:
+// the SHOW call, and a sideshow (which is always a straight 1-vs-1 compare regardless of how many are
+// still at the table).
+function exactEquityVsOne(hand){
+  const rest=unseenCards(hand);
+  const n=rest.length;
+  const myScore=evalHand(hand);
+  let wins=0,total=0;
+  for(let i=0;i<n;i++) for(let j=i+1;j<n;j++) for(let k=j+1;k<n;k++){
+    const c=cmpScore(myScore,evalHand([rest[i],rest[j],rest[k]]));
+    if(c>=0) wins++;         // a tie is scored as a win here — good enough for a decision-making estimate
+    total++;
+  }
+  return total?wins/total:1;
+}
+
+// Monte-Carlo win probability against several unknown opponents at once — exact enumeration explodes
+// combinatorially past one opponent, so this deals random hands to each of them (from the same fair pool)
+// over many trials and just counts how often this hand would have been best. Trial count scales down as
+// opponents go up, so the total work stays roughly constant.
+function sampleEquityVsMany(hand,numOpponents){
+  const rest=unseenCards(hand);
+  const need=numOpponents*3;
+  const myScore=evalHand(hand);
+  const trials=Math.max(120,Math.floor(900/numOpponents));
+  let wins=0;
+  for(let t=0;t<trials;t++){
+    const pool=rest.slice();
+    for(let i=pool.length-1;i>=pool.length-need;i--){         // partial Fisher–Yates: only the cards we'll actually use
+      const j=0|Math.random()*(i+1);
+      [pool[i],pool[j]]=[pool[j],pool[i]];
+    }
+    let best=true;
+    for(let o=0;o<numOpponents;o++){
+      const b=pool.length-1-o*3;
+      if(cmpScore(evalHand([pool[b],pool[b-1],pool[b-2]]),myScore)>0){ best=false; break; }
+    }
+    if(best) wins++;
+  }
+  return wins/trials;
+}
+
+// The one function the AI actually calls: real win probability for `hand` against `numOpponents` unknown
+// hands — exact when it can be, simulated when it has to be.
+function estimateWinProbability(hand,numOpponents){
+  if(numOpponents<=0) return 1;
+  if(numOpponents===1) return exactEquityVsOne(hand);
+  return sampleEquityVsMany(hand,numOpponents);
+}
+
+function botTurn(){
+  stopTurnTimer();
+  if(G.roundOver||G.sideshow) return;
+  const idx=G.currentIdx;
+  const p=G.players[idx];
+  if(!p||p.folded){advance();return;}
+  if(!p.isBot) return;                         // a human seat waits for its own buttons
+  if(packIfBroke(idx)) return;                 // can't pay the blind / call → packed automatically
+  const persona=BOT_PERSONA[idx]||DEFAULT_PERSONA;
+
+  // The bot's brain only decides WHICH action to take. Doing it goes through performAction() — the exact
+  // same code, costs and rules your buttons use — and it can only pick from availableActions().
+
+  // 1) peek at the cards? A sharp player looks once staying blind stops being cheap — i.e. once the stake
+  //    already in front of them is a real bite out of their stack — rather than off a fixed chip count that
+  //    means less and less as the tournament's boot escalates.
+  if(!p.seen){
+    const stakeBite=Math.min(1,G.currentBet/Math.max(p.chips,1));
+    const seenChance=0.10+persona.seenBias*0.4+(G.round>1?0.15:0)+stakeBite*0.5;
+    if(p.chips>=G.currentBet&&Math.random()<seenChance) performAction(idx,'see');
+  }
+
+  const a=availableActions(idx);
+  const cost=moveCost(p);
+  const opponents=activePlayers().filter(x=>x!==p).length;   // live opponents still in this hand
+  const stackRatio=cost/Math.max(p.chips,1);
+  const potOdds=cost/Math.max(G.pot+cost,1);                 // fraction of the resulting pot this move costs
+
+  // Real equity: how often this hand actually wins from here — exact heads-up, simulated with more players
+  // in — compared against what it costs to find out. `edge` above 0 means the raw numbers favour continuing.
+  const winProb=p.seen?estimateWinProbability(p.hand,opponents):1/(opponents+1);
+  const edge=winProb-potOdds;
+
+  // 2) heads-up SHOW — call it once the numbers clearly favour it, once the clock's dragged on long enough
+  //    that a round has to end, or once nerve (persona.aggr) takes over
+  if(a.show){
+    G.headsUp++;
+    const showChance=p.seen
+      ?Math.min(0.97,(edge>0?0.55:0.06)+winProb*0.4+G.headsUp*0.05+persona.aggr*0.1)
+      :Math.min(0.5,G.headsUp*0.06);
+    if(G.headsUp>=9||Math.random()<showChance){
+      if(performAction(idx,'show')) return;
+    }
+  }
+
+  // 3) pick a move. `tolerance` is how far below break-even a bot will still continue: tight players want
+  //    a real edge before they'll call, bluffers are happy to gamble on a small — or even negative — one.
+  const tolerance=Math.max(0.01,0.05+persona.bluff*0.12-persona.tight*0.08);
+  // A genuine bluff: representing strength this hand doesn't have. Effective mainly against few opponents
+  // (hard to fold out a crowd), so it fades fast as more live hands are still in the pot.
+  const bluffOn=Math.random()<(persona.bluff*0.30/(opponents+1)+0.02);
+
+  let action;
+  if(p.seen&&edge<-tolerance&&!bluffOn&&opponents>=1){
+    action='pack';
+  } else if(p.seen&&edge>0.18&&Math.random()<(0.35+persona.aggr*0.55)&&a.raise){
+    action='raise';                                          // clearly ahead on the numbers — press it
+  } else if(p.seen&&bluffOn&&edge<0&&opponents<=2&&a.raise){
+    action='raise';                                          // behind on paper, but a believable bluff against this few opponents
+  } else if(!p.seen&&a.raise&&Math.random()<persona.aggr*0.06){
+    action='raise';                                          // occasional blind raise — cheap pressure while still unseen
+  } else if(!p.seen&&G.round>2&&stackRatio>0.35&&Math.random()<persona.tight*0.18&&opponents>=1){
+    action='pack';                                           // blind, but the escalated stake is really biting a tight stack
+  } else {
+    action=p.seen?'chaal':'blind';
+  }
+
+  // 4) sideshow — about as close to a free option as this game has: lose the compare and you'd have folded
+  //    anyway, win it and an opponent is gone for nothing. A sharp player reaches for it often — just not
+  //    instead of raising a hand that's clearly good enough to build the pot with.
+  if(action!=='pack'&&a.sideshow){
+    const ssWinProb=p.seen?exactEquityVsOne(p.hand):0.5;
+    const ssChance=action==='raise'
+      ?0.08+persona.aggr*0.10                                          // a monster would rather grow the pot
+      :Math.min(0.9,0.30+Math.max(0,ssWinProb-0.4)*0.9+persona.tight*0.15);
+    if(Math.random()<ssChance){
+      if(performAction(idx,'sideshow')) return;
+    }
+  }
+
+  if(!performAction(idx,action)) performAction(idx,'pack');   // safety net: a turn must never get stuck
+}
+
+// ═══════════════════════
+// TURN / ROUND
+// ═══════════════════════
+function activePlayers(){
+  return G.players.filter(p=>!p.folded&&p.chips>=0);
+}
+
+function advance(){
+  if(checkRoundEnd()) return;
+
+  G.ssAskedSeat=-1; G.ssAskDenied=false;   // the turn is moving on — the next turn gets a fresh sideshow ask
+  let safety=0;
+  do{
+    G.currentIdx=nextSeat(G.currentIdx);   // clockwise
+    safety++;
+  }while(G.players[G.currentIdx].folded&&safety<8);
+
+  // it's their turn but they can't pay → packed automatically, and the turn moves on
+  if(packIfBroke(G.currentIdx)) return;
+
+  beginTurn();
+}
+
+// Start of ANY seat's turn: same countdown for everyone, then a bot (if it's a bot's seat) takes its move.
+function beginTurn(botDelay){
+  applyPendingSeat();
+  startTurnTimer();
+  render();
+  scheduleBotPeeks();
+  if(G.currentIdx===LOCAL_SEAT&&!G.players[LOCAL_SEAT].folded&&!G.roundOver) playTurnSound();
+  if(G.players[G.currentIdx].isBot){
+    // once you've folded there's nothing to wait for, so the bots play a bit faster
+    const d=botDelay!==undefined?botDelay
+           :(G.players[LOCAL_SEAT].folded?280+Math.random()*420:650+Math.random()*900);
+    scheduleBot(d);
+  }
+}
+
+// SEE isn't tied to your turn — you can peek whenever you like, so any bot seat can too.
+// Each turn, every bot that hasn't looked yet has a small chance to peek a moment later, at a random time.
+function scheduleBotPeeks(){
+  const hid=G.handId;
+  G.players.forEach((p,i)=>{
+    if(!p.isBot||p.folded||p.seen||i===G.currentIdx) return;      // (on its own turn a bot decides in botTurn)
+    const persona=BOT_PERSONA[i]||DEFAULT_PERSONA;
+    if(Math.random()>persona.seenBias*0.22) return;
+    setTimeout(()=>{
+      if(G.handId!==hid) return;                                  // a new deal happened in the meantime
+      const q=G.players[i];
+      if(!q||!q.isBot||q.chips<G.currentBet) return;              // a bot that can't cover the full stake stays blind
+      performAction(i,'see');                                     // the same SEE action as your button (refused if not allowed)
+    },400+Math.random()*1400);
+  });
+}
+
+function scheduleBot(delay){
+  clearTimeout(G.botTimer);
+  G.botTimer=setTimeout(botTurn,delay);
+}
+
+// What a seat has to pay to stay in on its turn: half the stake if it's still playing blind, the full stake once seen.
+function moveCost(p){ return p.seen?G.currentBet:Math.floor(G.currentBet/2); }
+
+// House rule: anyone who can't afford their blind / call is packed automatically — no short calls, no all-in.
+// Returns true when it packed the seat (foldPlayer then hands the turn on by itself).
+function packIfBroke(idx){
+  const p=G.players[idx];
+  if(!p||p.folded||G.roundOver) return false;
+  const need=moveCost(p);
+  if(p.chips>=need) return false;
+  foldPlayer(idx,`${seatLabel(idx)} can't afford ₹${need} — ${idx===LOCAL_SEAT?'you are ':''}PACKED automatically.`);
+  return true;
+}
+
+// Fold any seat right now, update the table instantly, then hand the turn on.
+// Used for: PACK (yours or a bot's), losing a sideshow, the turn timer running out, and auto-pack when broke.
+function foldPlayer(idx,text){
+  const p=G.players[idx];
+  if(!p||p.folded||G.roundOver) return;
+  p.folded=true;
+  if(idx===G.currentIdx) stopTurnTimer();   // stop the countdown straight away
+  playPackSound();
+  if(text) msg(text);
+  render();                              // dim the seat / drop the cards immediately
+  if(checkRoundEnd()) return;            // only one player left → showdown
+  if(G.currentIdx===idx) advance();      // it was their turn → pass it clockwise
+}
+
+function checkRoundEnd(){
+  const alive=activePlayers();
+  if(alive.length<=1){
+    resolveRound();
+    return true;
+  }
+  // (a seat that can't pay is packed on its turn — see packIfBroke — so nobody stays in on chips they don't have)
+  return false;
+}
+
+// keeps the ring HUD (bottom-right) in sync with G.timerLeft, out of 28s
+const RING_CIRC=2*Math.PI*26;
+function paintTurnRing(){
+  const secEl=document.getElementById('ring-seconds');
+  if(secEl) secEl.textContent=G.timerLeft;
+  const fill=document.getElementById('ring-fill');
+  if(fill) fill.style.strokeDashoffset=RING_CIRC*(1-Math.max(0,G.timerLeft)/TURN_SECS);
+  const wrap=document.getElementById('turn-ring-wrap');
+  if(wrap) wrap.classList.toggle('low',G.timerLeft<=7);
+}
+
+// One countdown for whoever's turn it is. Your seat shows it in the ring HUD, everyone else on their avatar.
+// If time runs out, that seat is packed — the same rule for you and for every other seat.
+function startTurnTimer(){
+  clearInterval(G.timerInt);
+  G.timerOn=true;
+  const idx=G.currentIdx;
+  G.timerLeft=TURN_SECS;
+  const paint=()=>{
+    const td=document.getElementById('timer-'+idx);
+    if(td) td.textContent=G.timerLeft;
+    if(idx===LOCAL_SEAT) paintTurnRing();
+  };
+  paint();
+  G.timerInt=setInterval(()=>{
+    G.timerLeft--;
+    paint();
+    if(idx===LOCAL_SEAT&&G.timerLeft<=5&&G.timerLeft>0) playTickSound();
+    if(G.timerLeft<=0){
+      clearInterval(G.timerInt); G.timerOn=false;
+      if(G.sideshow) abortSideshow();            // out of time mid-sideshow → it's dropped and the asker packs
+      foldPlayer(idx,`Time up — ${idx===LOCAL_SEAT?'you':seatName(idx)} PACKED.`);
+    }
+  },1000);
+}
+
+function stopTurnTimer(){
+  clearInterval(G.timerInt);
+  G.timerOn=false;
+}
+
+// ═══════════════════════
+// RESOLVE
+// ═══════════════════════
+// callerIdx = the seat that pressed SHOW (undefined when the round ends because everyone else packed).
+// Tie on SHOW: the player who called it loses, the other player wins.
+function resolveRound(callerIdx){
+  const sid=G.sid;
+  stopTurnTimer();
+  clearTimeout(G.botTimer);
+  G.roundOver=true;
+  G.showdown=callerIdx!==undefined;   // SHOW = hands are revealed; everyone else packed = winner keeps their cards hidden
+
+  const alive=G.players.filter(p=>!p.folded);
+  if(alive.length===0){render();return;}
+
+  let winner=alive[0];
+  alive.forEach(p=>{
+    const c=cmpScore(evalHand(p.hand),evalHand(winner.hand));
+    // strictly better hand wins; on an exact tie the SHOW caller gives way to the other player
+    if(c>0 || (c===0 && callerIdx!==undefined && G.players.indexOf(winner)===callerIdx)) winner=p;
+  });
+  const winnerIdx=G.players.indexOf(winner);
+  G.lastWinnerIdx=winnerIdx;   // winner deals the next round
+  const potAmt=G.pot;
+
+  winner.chips+=G.pot;
+  const ws=evalHand(winner.hand);
+
+  // GAME OVER check: a seat that can't pay the boot is out for good, so once only ONE seat can still pay it, that seat has won the table
+  const inGame=seatsInGame();
+  G.gameOver=inGame.length<=1;
+  G.kingIdx=G.gameOver?(inGame.length===1?inGame[0]:winnerIdx):null;
+
+  // Result box. Two ways a round can end:
+  //   • SHOW (showdown)        → both hands are revealed: the winner's and the loser's.
+  //   • everyone else packed   → the winner isn't made to show: their cards (and hand name) stay hidden.
+  document.getElementById('w-name').textContent=winnerIdx===LOCAL_SEAT?`YOU WIN ₹${potAmt}!`:`${seatName(winnerIdx)} WINS ₹${potAmt}!`;
+  if(G.showdown){
+    document.getElementById('w-hand-label').textContent=ws.lab;
+    document.getElementById('winner-cards').innerHTML=ssCardsHTML(winner.hand);
+    document.getElementById('loser-list').innerHTML=alive.filter(p=>p!==winner).map(p=>{
+      const i=G.players.indexOf(p);
+      return`<div class="loser-row">
+        <div class="l-name">${i===LOCAL_SEAT?'YOUR HAND':seatName(i).toUpperCase()+"'S HAND"}</div>
+        <div class="w-hand">${evalHand(p.hand).lab}</div>
+        <div class="loser-cards">${ssCardsHTML(p.hand)}</div>
+      </div>`;
+    }).join('');
+  } else {
+    document.getElementById('w-hand-label').textContent='Everyone else packed';
+    document.getElementById('winner-cards').innerHTML=winner.hand.map(()=>'<div class="winner-card back"></div>').join('');
+    document.getElementById('loser-list').innerHTML='';
+  }
+
+  document.getElementById('w-dealer-note').innerHTML=
+    `<span class="d-badge">D</span>${winnerIdx===LOCAL_SEAT?'You deal':seatName(winnerIdx)+' deals'} the next round`;
+
+  potToSeat(winnerIdx);
+  if(winnerIdx===LOCAL_SEAT) playWinSound(); else playLoseSound();
+  G.pot=0;
+  render();
+  setTimeout(()=>{
+    if(sid!==G.sid||!G.roundOver) return;   // (sid check: you left the table while the result was on its way)
+    if(G.gameOver){ showKing(); return; }  // the game is won: no next-round countdown, no new deal
+    document.getElementById('winner-overlay').classList.add('show');
+    startAutoContinue('round',newRound);   // next round starts by itself after 5 seconds
+  },G.gameOver?1200:500);                  // (a little longer at the very end so the final showdown can be seen)
+}
+
+// Seats still in the game = those who can pay the boot. (A seat that can't is sitting out every round from then on.)
+function seatsInGame(){
+  const out=[];
+  G.players.forEach((p,i)=>{ if(p.chips>=G.currentBoot) out.push(i); });
+  return out;
+}
+
+function showKing(){
+  const k=G.kingIdx;
+  if(k==null) return;
+  const name=NAMES[k];
+  document.getElementById('king-name').textContent=name;
+  document.getElementById('king-sub').textContent=`Final stack ₹${G.players[k].chips.toLocaleString()}${k===LOCAL_SEAT?' · that\'s you!':''}`;
+  document.getElementById('king-overlay').classList.add('show');
+  startAutoContinue('king',exitTable,KING_EXIT_SECS);   // …then the table closes by itself and everyone lands on the main menu
+  msg(`Congratulations ${name}, you are the King of this Table.`);
+  if(k===LOCAL_SEAT) playKingFanfare(); else playLoseSound();
+}
+
+// ═══════════════════════
+// TABLE MENU (☰) — Exit Table / Stand Up
+// ═══════════════════════
+function openMenu(){
+  refreshMenu();
+  const tb=document.getElementById('topbar');
+  document.getElementById('menu-panel').style.top=((tb?tb.offsetHeight:48)+6)+'px';   // hang the panel right under the top bar
+  document.getElementById('menu-backdrop').classList.add('show');
+  document.getElementById('menu-panel').classList.add('show');
+  const b=document.getElementById('btn-menu');
+  b.classList.add('open'); b.setAttribute('aria-expanded','true');
+}
+function closeMenu(){
+  document.getElementById('menu-backdrop').classList.remove('show');
+  document.getElementById('menu-panel').classList.remove('show');
+  const b=document.getElementById('btn-menu');
+  b.classList.remove('open'); b.setAttribute('aria-expanded','false');
+}
+function toggleMenu(){
+  ensureAudio();
+  if(document.getElementById('menu-panel').classList.contains('show')) closeMenu(); else openMenu();
+}
+// Stand Up is only offered to a seat that is still playing and while the game isn't over.
+function refreshMenu(){
+  const p=G.players[LOCAL_SEAT];
+  const can=!!p&&!p.standing&&!G.gameOver;
+  const btn=document.getElementById('menu-stand'), sub=document.getElementById('menu-stand-sub');
+  if(btn) btn.disabled=!can;
+  if(sub) sub.textContent=(p&&p.standing)?"You're already watching the table":G.gameOver?'The game is over':'Give up your chips and watch from the side';
+}
+document.getElementById('btn-menu').addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); toggleMenu(); } });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeMenu(); });
+
+// EXIT TABLE — the seat this screen controls leaves at once and you land on the main menu.
+// Everything running at the table is stopped (turn clock, bots, sideshow popups, countdowns, animations), and the session
+// counter is bumped so nothing that was already queued can fire afterwards. PLAY VS COMPUTER then starts a brand-new table.
+function exitTable(){
+  closeMenu();
+  G.sid++;
+  stopTurnTimer();
+  clearTimeout(G.botTimer); clearTimeout(G.sideshowTimer);
+  clearInterval(G.bootTimer); G.bootTimer=null;   // tournament clock stops — a fresh PLAY VS COMPUTER starts a new one at ₹BOOT_START
+  ['round','ss','ssreq','king'].forEach(stopAutoContinue);   // (incl. the game-over countdown, so leaving early can't trigger a second exit)
+  G.handId++;                                     // cancels the pending "bot peeks" of the hand in play
+  G.roundOver=true;                               // …and nothing can be played at a table nobody is sitting at
+  G.sideshow=null; G.pendingSeat=null; G.bigCardsKey=null;
+  ['winner-overlay','sideshow-overlay','ssreq-overlay','king-overlay','your-turn-hud','hud-call-amt'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.classList.remove('show');
+  });
+  const clear=id=>{ const el=document.getElementById(id); if(el) el.innerHTML=''; };
+  clear('fx-layer'); clear('player-cards-big');
+  const hn=document.getElementById('hand-name-display'); if(hn) hn.style.display='none';
+  const bar=document.getElementById('action-bar'); if(bar) bar.classList.remove('spectating');
+  document.getElementById('start-overlay').style.display='flex';   // the main menu
+}
+
+// STAND UP — a seat gives up its chair: every chip is surrendered (forfeited, out of play for good), the hand in play is
+// packed, and the seat is disqualified from every later round — but the player stays in the room and keeps watching.
+// Written for ANY seat (standUp(idx)), like performAction, so a remote player's Stand Up can call it the same way.
+function standUp(idx){
+  const p=G.players[idx];
+  if(!p||p.standing||G.gameOver) return false;
+  const gave=p.chips;
+  const ss=G.sideshow;
+  const inSideshow=!!ss&&(ss.reqIdx===idx||ss.tgtIdx===idx);
+  const askedSeatLeft=inSideshow&&ss.tgtIdx===idx;     // the seat that was asked stood up → the asker's turn carries on
+  const wasLive=!p.folded&&!G.roundOver;               // in a hand that is still being played
+
+  p.standing=true;
+  p.chips=0;                                           // (before any fold, so a round that ends because of this counts who is left correctly)
+  if(inSideshow) abortSideshow();                      // a sideshow the seat was part of is dropped
+
+  const text=idx===LOCAL_SEAT
+    ?`You stood up and surrendered ₹${gave.toLocaleString()} — you're watching now.`
+    :`${NAMES[idx]} stood up and surrendered ₹${gave.toLocaleString()}.`;
+  if(wasLive){
+    foldPlayer(idx,text);                              // packs the hand, and passes the turn on if it was theirs
+    if(askedSeatLeft&&!G.roundOver) resumeTurn();
+  } else {
+    msg(text);
+    render();
+  }
+  endGameIfDecided();
+  return true;
+}
+// If standing up left fewer than two seats able to pay the boot BETWEEN rounds, the table is decided right away.
+function endGameIfDecided(){
+  if(G.gameOver||!G.roundOver) return;
+  const left=seatsInGame();
+  if(left.length>1) return;
+  G.gameOver=true;
+  G.kingIdx=left.length===1?left[0]:G.lastWinnerIdx;
+  stopAutoContinue('round');
+  const wo=document.getElementById('winner-overlay');
+  if(wo.classList.contains('show')){ wo.classList.remove('show'); showKing(); }   // (if the result isn't up yet, resolveRound's own timer shows the King)
+}
+function menuStandUp(){ closeMenu(); standUp(LOCAL_SEAT); }
+
+// MAIN MENU — ADMIN PANEL / JOIN TOURNAMENT (placeholders until those screens exist)
+function showComingSoon(title,sub){
+  document.getElementById('soon-text').textContent=title;
+  document.getElementById('soon-sub').textContent=sub||"This section isn't built yet.";
+  document.getElementById('soon-overlay').classList.add('show');
+}
+function closeSoon(){ document.getElementById('soon-overlay').classList.remove('show'); }
+
+// ═══════════════════════
+// ADMIN PANEL + JOIN TOURNAMENT — the tournament system
+// These two menu items are linked to each other (an admin runs a tournament from the panel, players join
+// it from the other button); neither has anything to do with PLAY VS COMPUTER, which stays a separate,
+// standalone bot table untouched by any of this.
+// ═══════════════════════
+// The admin password now lives ONLY on the server (see server.js) — nothing here checks it locally anymore.
+// adminPassword holds the value only after the server has confirmed it, kept in memory for this tab's
+// session (never localStorage) so it can be resent with the Create Table save/load calls below.
+let adminPassword=null;
+
+function openAdminPanel(){
+  document.getElementById('admin-pass-input').value='';
+  setAdminPassError('Incorrect password');
+  document.getElementById('admin-pass-error').style.display='none';
+  document.getElementById('admin-pass-overlay').classList.add('show');
+  setTimeout(()=>document.getElementById('admin-pass-input').focus(),50);
+}
+function closeAdminPass(){ document.getElementById('admin-pass-overlay').classList.remove('show'); }
+function setAdminPassError(msg){ document.getElementById('admin-pass-error').textContent=msg; }
+async function submitAdminPass(){
+  const val=document.getElementById('admin-pass-input').value;
+  const btn=document.getElementById('btn-admin-pass-submit');
+  btn.disabled=true;
+  try{
+    const res=await fetch('/api/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:val})});
+    if(res.ok){
+      adminPassword=val;
+      closeAdminPass();
+      openAdminPanelView();
+      btn.disabled=false;
+      return;
+    }
+    setAdminPassError('Incorrect password');
+  }catch(e){
+    setAdminPassError('Could not reach the server — try again.');
+  }
+  document.getElementById('admin-pass-error').style.display='block';
+  document.getElementById('admin-pass-input').value='';
+  document.getElementById('admin-pass-input').focus();
+  btn.disabled=false;
+}
+document.getElementById('admin-pass-input').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); submitAdminPass(); } });
+
+function openAdminPanelView(){ showAdminView('menu'); document.getElementById('admin-panel-overlay').classList.add('show'); }
+function closeAdminPanelView(){ document.getElementById('admin-panel-overlay').classList.remove('show'); }
+
+// ── ADMIN PANEL sub-views: the menu list vs the Create Table form ──
+function showAdminView(view){
+  const isMenu=view==='menu';
+  document.getElementById('admin-menu-view').style.display=isMenu?'':'none';
+  document.getElementById('admin-create-table-view').style.display=isMenu?'none':'';
+  document.getElementById('admin-panel-title').textContent=isMenu?'ADMIN PANEL':'CREATE TABLE';
+  document.getElementById('admin-panel-body').scrollTop=0;
+  if(!isMenu&&!ctFormInitialized){                      // first time the form is opened this session: pull the saved config from the server
+    ctFormInitialized=true;
+    loadTableConfigFromServer();
+  }
+}
+async function loadTableConfigFromServer(){
+  try{
+    const res=await fetch('/api/admin/table/get',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({adminPassword})});
+    if(res.ok){
+      const {config}=await res.json();
+      if(config) populateCreateTableForm(config); else updateSeatFieldsVisibility();
+      return;
+    }
+  }catch(e){ /* fall through */ }
+  updateSeatFieldsVisibility();
+}
+
+// ── CREATE TABLE — tournament table setup ──
+const CT_DEFAULT_NUM_PLAYERS=8;                        // Min-2, Max-8; defaulted to a full table — change here if you'd rather default lower
+let ctFormInitialized=false;                           // the config itself is no longer cached client-side at all — the server (server.js) is the only place it lives now
+
+function updateSeatFieldsVisibility(){                 // only show Name/Password/Type rows for seats actually in play
+  const n=parseInt(document.getElementById('ct-num-players').value,10);
+  document.querySelectorAll('.seat-field').forEach(el=>{
+    el.style.display=parseInt(el.dataset.seat,10)<=n?'':'none';
+  });
+}
+
+// Human/Computer per seat: a Computer seat needs no password — the bot just occupies that seat when the
+// match starts, whatever text is sitting in the password field for it. This just reflects that in the UI.
+function onSeatTypeChange(seat){ updatePasswordFieldState(seat); }
+function updatePasswordFieldState(seat){
+  const isComputer=document.getElementById('ct-type-'+seat).value==='computer';
+  document.getElementById('ct-pw-'+seat).disabled=isComputer;
+  document.getElementById('ct-pw-note-'+seat).classList.toggle('show',isComputer);
+}
+function updateAllPasswordFieldStates(){ for(let i=1;i<=8;i++) updatePasswordFieldState(i); }
+
+function populateCreateTableForm(cfg){
+  document.getElementById('ct-num-players').value=String(cfg.numPlayers||CT_DEFAULT_NUM_PLAYERS);
+  for(let i=1;i<=8;i++){
+    const p=(cfg.players||[]).find(pl=>pl.seat===i);
+    document.getElementById('ct-name-'+i).value=p?p.name:('Player'+i);
+    document.getElementById('ct-pw-'+i).value=p?p.password:String(i);
+    document.getElementById('ct-type-'+i).value=(p&&p.type==='computer')?'computer':'human';
+  }
+  document.getElementById('ct-observer-pw').value=cfg.observerPassword||'abc';
+  document.getElementById('ct-chips').value=cfg.chipsPerPlayer||5000;
+  document.getElementById('ct-boot').value=cfg.startingBoot||10;
+  document.getElementById('ct-blind').value=cfg.startingBlind||10;
+  document.getElementById('ct-max-blind').value=cfg.maxBlindCall||'Unlimited';
+  document.getElementById('ct-boot-interval').value=cfg.bootIncreaseMinutes||5;
+  document.getElementById('ct-start-time').value=cfg.matchStartTime||'';
+  updateSeatFieldsVisibility();
+  updateAllPasswordFieldStates();
+}
+
+function resetCreateTableForm(){
+  document.getElementById('ct-num-players').value=String(CT_DEFAULT_NUM_PLAYERS);
+  for(let i=1;i<=8;i++){
+    document.getElementById('ct-name-'+i).value='Player'+i;
+    document.getElementById('ct-pw-'+i).value=String(i);
+    document.getElementById('ct-type-'+i).value='human';
+  }
+  document.getElementById('ct-observer-pw').value='abc';
+  document.getElementById('ct-chips').value=5000;
+  document.getElementById('ct-boot').value=10;
+  document.getElementById('ct-blind').value=10;
+  document.getElementById('ct-max-blind').value='Unlimited';
+  document.getElementById('ct-boot-interval').value=5;
+  document.getElementById('ct-start-time').value='';
+  updateSeatFieldsVisibility();
+  updateAllPasswordFieldStates();
+  document.getElementById('ct-status').classList.remove('show');
+}
+
+async function confirmCreateTable(){
+  const n=parseInt(document.getElementById('ct-num-players').value,10);
+  const players=[];
+  for(let i=1;i<=n;i++){
+    const nameVal=document.getElementById('ct-name-'+i).value.trim();
+    const pwVal=document.getElementById('ct-pw-'+i).value.trim();
+    const type=document.getElementById('ct-type-'+i).value==='computer'?'computer':'human';
+    // password is still recorded even for a Computer seat, but it's never required to take that seat —
+    // a Computer seat is auto-filled by a bot the moment the table starts.
+    players.push({ seat:i, name:nameVal||('Player'+i), password:pwVal||String(i), type });
+  }
+  const config={
+    numPlayers:n,
+    players,                                            // seat order here is join order: password → auto-seated by name/seat
+    observerPassword:document.getElementById('ct-observer-pw').value.trim()||'abc',
+    chipsPerPlayer:parseInt(document.getElementById('ct-chips').value,10)||5000,
+    startingBoot:parseInt(document.getElementById('ct-boot').value,10)||10,
+    startingBlind:parseInt(document.getElementById('ct-blind').value,10)||10,
+    maxBlindCall:document.getElementById('ct-max-blind').value.trim()||'Unlimited',
+    bootIncreaseMinutes:parseInt(document.getElementById('ct-boot-interval').value,10)||5,
+    matchStartTime:document.getElementById('ct-start-time').value||''
+  };
+  const status=document.getElementById('ct-status');
+  const btn=document.getElementById('btn-ct-confirm');
+  btn.disabled=true;
+  try{
+    // The config — including every seat password — now lives only on the server (server.js), saved to a
+    // file there. Nothing with a password in it is kept in this browser at all anymore.
+    const res=await fetch('/api/admin/table',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({adminPassword,config})});
+    if(res.ok){
+      status.textContent=`✓ Table created — ${n} seat${n===1?'':'s'} configured.`;
+    }else{
+      const body=await res.json().catch(()=>({}));
+      status.textContent=`✗ ${body.error||'Could not save the table.'}`;
+    }
+  }catch(e){
+    status.textContent='✗ Could not reach the server.';
+  }
+  status.classList.add('show');
+  clearTimeout(window._ctStatusTimer);
+  window._ctStatusTimer=setTimeout(()=>status.classList.remove('show'),3000);
+  btn.disabled=false;
+}
+
+// ── JOIN TOURNAMENT — password → seat/observer lookup ──
+// Only a confirmation ("you're seated / you're observing") for now. It does NOT start or sync a live match —
+// that needs real networking, so a matched player's seat here is just parked in a holding screen until that's
+// built. The password check itself now happens server-side (see /api/join in server.js): this page never
+// holds the seat/observer password list, so there's nothing here for anyone to read out of the page source.
+function openJoinTournament(){
+  document.getElementById('join-pass-input').value='';
+  document.getElementById('join-pass-error').style.display='none';
+  document.getElementById('join-pass-overlay').classList.add('show');
+  setTimeout(()=>document.getElementById('join-pass-input').focus(),50);
+}
+function closeJoinPass(){ document.getElementById('join-pass-overlay').classList.remove('show'); }
+
+async function submitJoinPass(){
+  const val=document.getElementById('join-pass-input').value.trim();
+  const btn=document.getElementById('btn-join-pass-submit');
+  const errEl=document.getElementById('join-pass-error');
+  btn.disabled=true;
+  try{
+    const res=await fetch('/api/join',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:val})});
+    const body=await res.json().catch(()=>({}));
+    if(res.ok){
+      closeJoinPass();
+      showJoinSeated(body);
+      btn.disabled=false;
+      return;
+    }
+    if(res.status===404){                             // no table created yet — same placeholder as before
+      closeJoinPass();
+      showComingSoon('JOIN TOURNAMENT',body.error||'No tournament has been created yet. Check back once the admin sets one up.');
+      btn.disabled=false;
+      return;
+    }
+    errEl.textContent=body.error||'Incorrect password';
+  }catch(e){
+    errEl.textContent='Could not reach the server — try again.';
+  }
+  errEl.style.display='block';
+  document.getElementById('join-pass-input').value='';
+  document.getElementById('join-pass-input').focus();
+  btn.disabled=false;
+}
+document.getElementById('join-pass-input').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); submitJoinPass(); } });
+
+function showJoinSeated(result){
+  const info=result.tableInfo||{};
+  const title=document.getElementById('join-seated-title');
+  const sub=document.getElementById('join-seated-sub');
+  const details=document.getElementById('join-seated-details');
+  if(result.kind==='seat'){
+    title.textContent="YOU'RE SEATED";
+    sub.textContent=`Seat ${result.seat} — ${result.name}`;
+  }else{
+    title.textContent='OBSERVING';
+    sub.textContent='Watching only — no seat assigned';
+  }
+  const rows=[
+    `<div><b>Table:</b> ${info.numPlayers} seats</div>`,
+    `<div><b>Chips:</b> ₹${info.chipsPerPlayer}</div>`,
+    `<div><b>Boot:</b> ₹${info.startingBoot} · <b>Blind:</b> ₹${info.startingBlind}</div>`
+  ];
+  if(info.matchStartTime) rows.push(`<div><b>Starts:</b> ${formatMatchTime(info.matchStartTime)} IST</div>`);
+  rows.push(`<div class="join-waiting-note">Waiting for the match to start…</div>`);
+  details.innerHTML=rows.join('');
+  document.getElementById('join-seated-overlay').classList.add('show');
+}
+function closeJoinSeated(){ document.getElementById('join-seated-overlay').classList.remove('show'); }
+function leaveJoinSeated(){ closeJoinSeated(); }   // just dismisses the holding screen — no live seat to release yet
+
+function formatMatchTime(hhmmss){                  // "19:30" / "19:30:00" -> "7:30 PM"
+  const [h,m]=hhmmss.split(':').map(Number);
+  const d=new Date(); d.setHours(h,m||0,0,0);
+  return d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
+}
+
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){ closeSoon(); closeAdminPass(); closeAdminPanelView(); closeJoinPass(); closeJoinSeated(); }
+});
+
+// ═══════════════════════
+// MSG
+// ═══════════════════════
+function msg(txt){
+  document.getElementById('msg-text').textContent=txt;
+}
+
+// ═══════════════════════
+// START
+// ═══════════════════════
+function startGame(){
+  ensureAudio();
+  document.getElementById('start-overlay').style.display='none';
+  initPlayers();
+  buildSeats();
+  G.round=1;
+  G.gameOver=false; G.kingIdx=null;
+  document.getElementById('king-overlay').classList.remove('show');
+  G.lastWinnerIdx=null;
+  G.dealerIdx=Math.floor(Math.random()*NUM_SEATS);   // first round: random dealer
+
+  // TOURNAMENT CLOCK starts now (0:00) — boot resets to ₹BOOT_START and begins escalating off this timestamp
+  G.tournamentStart=Date.now();
+  G.currentBoot=BOOT_START;
+  G.pendingBoot=null;
+  G.bootJustEscalated=false;
+  clearInterval(G.bootTimer);
+  G.bootTimer=setInterval(checkBootEscalation,1000);
+  updateBootDisplay();
+
+  startRound();
+}
+
+// prevent scroll bounce on the fixed game screen — but let genuinely scrollable panels (like the admin panel body) scroll normally
+document.body.addEventListener('touchmove',e=>{ if(!e.target.closest('.allow-scroll')) e.preventDefault(); },{passive:false});
+
+</script>
+</body>
+</html>
