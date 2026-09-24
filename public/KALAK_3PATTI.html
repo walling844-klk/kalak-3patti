@@ -4258,8 +4258,20 @@ function closeSoon(){ document.getElementById('soon-overlay').classList.remove('
 // it from the other button); neither has anything to do with PLAY VS COMPUTER, which stays a separate,
 // standalone bot table untouched by any of this.
 // ═══════════════════════
-let adminPassword=null;               // held only in memory after the server validates it
-let adminUnlocked=false;               // once entered correctly, stays unlocked for the rest of this session
+// The admin password lives ONLY on the server (server.js) — nothing in this page checks or contains it.
+// adminPassword holds the value only after the server has confirmed it, kept in memory for this tab (never
+// stored in the browser) so it can be resent with each admin call below.
+let adminPassword=null;
+// One place for every call to the server. Never throws; always answers {ok,status,data}.
+async function api(path,body){
+  try{
+    const res=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});
+    const data=await res.json().catch(()=>({}));
+    return {ok:res.ok,status:res.status,data};
+  }catch(e){
+    return {ok:false,status:0,data:{error:'Could not reach the server — try again.'}};
+  }
+}
 
 function openAdminPanel(){
   document.getElementById('admin-pass-input').value='';
@@ -4268,25 +4280,23 @@ function openAdminPanel(){
   setTimeout(()=>document.getElementById('admin-pass-input').focus(),50);
 }
 function closeAdminPass(){ document.getElementById('admin-pass-overlay').classList.remove('show'); }
+function setAdminPassError(msg){ document.getElementById('admin-pass-error').textContent=msg; }
 async function submitAdminPass(){
-  const input=document.getElementById('admin-pass-input');
-  const val=input.value;
-  try{
-    const r=await fetch('/api/admin/login',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({password:val})
-    });
-    if(!r.ok) throw new Error('Incorrect password');
+  const val=document.getElementById('admin-pass-input').value;
+  const btn=document.getElementById('btn-admin-pass-submit');
+  btn.disabled=true;
+  const r=await api('/api/admin/login',{password:val});
+  btn.disabled=false;
+  if(r.ok){
     adminPassword=val;
-    adminUnlocked=true;
     closeAdminPass();
     openAdminPanelView();
-  }catch(e){
-    document.getElementById('admin-pass-error').style.display='block';
-    input.value='';
-    input.focus();
+    return;
   }
+  setAdminPassError(r.data.error||'Incorrect password');
+  document.getElementById('admin-pass-error').style.display='block';
+  document.getElementById('admin-pass-input').value='';
+  document.getElementById('admin-pass-input').focus();
 }
 document.getElementById('admin-pass-input').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); submitAdminPass(); } });
 
@@ -4300,22 +4310,39 @@ function showAdminView(view){
   document.getElementById('admin-create-table-view').style.display=isMenu?'none':'';
   document.getElementById('admin-panel-title').textContent=isMenu?'ADMIN PANEL':'CREATE TABLE';
   document.getElementById('admin-panel-body').scrollTop=0;
-  if(!isMenu&&!ctFormInitialized){                      // first time the form is opened this session: load any saved config
-    ctFormInitialized=true;
+  if(!isMenu) loadTableFromServer();
+}
+// The table lives on the server, not in this browser: every time the Create Table screen opens it asks the
+// server whether a table is online (and pulls its settings), so the admin sees the same thing from any device.
+async function loadTableFromServer(){
+  const btn=document.getElementById('btn-ct-confirm');
+  btn.disabled=true;                               // can't press Create until we know whether a table already exists
+  const r=await api('/api/admin/table/get',{adminPassword});
+  btn.disabled=false;
+  if(r.ok){
+    TOURNAMENT_CONFIG=r.data.config||null;
     if(TOURNAMENT_CONFIG) populateCreateTableForm(TOURNAMENT_CONFIG);
-    else updateSeatFieldsVisibility();
+    else if(!ctFormInitialized) updateSeatFieldsVisibility();
+    ctFormInitialized=true;
+  }else{
+    showCtStatus('✗ '+(r.data.error||'Could not load the table.'),true,5000);
+    if(r.status===401) adminPassword=null;
   }
-  if(!isMenu) refreshCreateTableState();
+  refreshCreateTableState();
+}
+function showCtStatus(text,isError,ms){            // the message line just above the buttons
+  const st=document.getElementById('ct-status');
+  st.textContent=text;
+  st.classList.toggle('error',!!isError);
+  st.classList.add('show');
+  clearTimeout(window._ctStatusTimer);
+  window._ctStatusTimer=setTimeout(()=>st.classList.remove('show','error'),ms||3500);
 }
 
 // ── CREATE TABLE — tournament table setup ──
 const CT_DEFAULT_NUM_PLAYERS=8;                        // Min-2, Max-8; defaulted to a full table — change here if you'd rather default lower
-let TOURNAMENT_CONFIG=null;                            // the last confirmed tournament setup, used later by JOIN TOURNAMENT
+let TOURNAMENT_CONFIG=null;                            // the admin's in-memory copy of the table, fetched from the server — never saved in this browser
 let ctFormInitialized=false;
-try{                                                    // pick up a config saved in an earlier session on this device
-  const saved=localStorage.getItem('kalak_tournament_config');
-  if(saved) TOURNAMENT_CONFIG=JSON.parse(saved);
-}catch(e){ TOURNAMENT_CONFIG=null; }
 
 function updateSeatFieldsVisibility(){                 // only show Name/Password/Type rows for seats actually in play
   const n=parseInt(document.getElementById('ct-num-players').value,10);
@@ -4392,15 +4419,11 @@ function ctIsoToDmy(iso){                          // "2026-09-25" -> "25/09/202
   return m?`${m[3]}/${m[2]}/${m[1]}`:'';
 }
 
-function confirmCreateTable(){
+async function confirmCreateTable(){
   const dateRaw=document.getElementById('ct-start-date').value.trim();
   const startDateIso=dateRaw?ctParseDate(dateRaw):'';
   if(dateRaw&&!startDateIso){                      // typed something, but it isn't a real DD/MM/YYYY date
-    const st=document.getElementById('ct-status');
-    st.textContent='✗ Enter the match start date as DD/MM/YYYY (e.g. 25/09/2026).';
-    st.classList.add('show','error');
-    clearTimeout(window._ctStatusTimer);
-    window._ctStatusTimer=setTimeout(()=>st.classList.remove('show','error'),3500);
+    showCtStatus('✗ Enter the match start date as DD/MM/YYYY (e.g. 25/09/2026).',true);
     return;
   }
   const n=parseInt(document.getElementById('ct-num-players').value,10);
@@ -4413,7 +4436,7 @@ function confirmCreateTable(){
     // a Computer seat is auto-filled by a bot the moment the table starts.
     players.push({ seat:i, name:nameVal||('Player'+i), password:pwVal||String(i), type });
   }
-  TOURNAMENT_CONFIG={
+  const config={
     numPlayers:n,
     players,                                            // seat order here is join order: password → auto-seated by name/seat
     observerPassword:document.getElementById('ct-observer-pw').value.trim()||'abc',
@@ -4425,7 +4448,17 @@ function confirmCreateTable(){
     matchStartDate:startDateIso||'',
     matchStartTime:document.getElementById('ct-start-time').value||''
   };
-  try{ localStorage.setItem('kalak_tournament_config',JSON.stringify(TOURNAMENT_CONFIG)); }catch(e){}
+  // The whole table — every seat password included — is saved on the server. Nothing with a password in it is kept in this browser.
+  const btn=document.getElementById('btn-ct-confirm');
+  btn.disabled=true;
+  const r=await api('/api/admin/table',{adminPassword,config});
+  btn.disabled=false;
+  if(!r.ok){
+    showCtStatus('✗ '+(r.data.error||'Could not save the table.'),true,5000);
+    if(r.status===409) loadTableFromServer();      // a table is already online — show it instead
+    return;
+  }
+  TOURNAMENT_CONFIG=r.data.config;
   clearTimeout(window._ctStatusTimer);
   document.getElementById('ct-status').classList.remove('show','error');
   refreshCreateTableState();                       // Confirm/Reset buttons are replaced by "TABLE IS ONLINE" + KILL THE TABLE
@@ -4433,7 +4466,7 @@ function confirmCreateTable(){
 }
 
 // ── TABLE ONLINE / KILL ──
-// A table is "online" while TOURNAMENT_CONFIG exists (it's also kept in localStorage, so it stays online after a reload).
+// A table is "online" while the server has one saved (the admin panel asks the server each time it opens, so it stays online across reloads, devices and server restarts).
 function refreshCreateTableState(){
   const cfg=TOURNAMENT_CONFIG, online=!!cfg;
   const wrap=document.getElementById('ct-form-wrap');
@@ -4464,7 +4497,7 @@ function loadStartEditor(){
   document.getElementById('ct-edit-time').value=cfg.matchStartTime||'';
   document.getElementById('ct-start-msg').classList.remove('show','error');
 }
-function updateStartTime(){
+async function updateStartTime(){
   const cfg=TOURNAMENT_CONFIG; if(!cfg) return;
   const msg=document.getElementById('ct-start-msg');
   const show=(text,isError)=>{
@@ -4477,19 +4510,25 @@ function updateStartTime(){
   const dateRaw=document.getElementById('ct-edit-date').value.trim();
   const iso=dateRaw?ctParseDate(dateRaw):'';
   if(dateRaw&&!iso){ show('✗ Enter the date as DD/MM/YYYY (e.g. 25/09/2026).',true); return; }
-  cfg.matchStartDate=iso||'';
-  cfg.matchStartTime=document.getElementById('ct-edit-time').value||'';
-  try{ localStorage.setItem('kalak_tournament_config',JSON.stringify(TOURNAMENT_CONFIG)); }catch(e){}
-  document.getElementById('ct-start-date').value=ctIsoToDmy(cfg.matchStartDate);   // keep the (locked) form above in step
-  document.getElementById('ct-start-time').value=cfg.matchStartTime;
+  const btn=document.getElementById('btn-ct-start-save');
+  btn.disabled=true;
+  const r=await api('/api/admin/table/start',{adminPassword,matchStartDate:iso||'',matchStartTime:document.getElementById('ct-edit-time').value||''});
+  btn.disabled=false;
+  if(!r.ok){
+    show('✗ '+(r.data.error||'Could not update the start.'),true);
+    if(r.status===404) loadTableFromServer();      // the table was killed meanwhile
+    return;
+  }
+  TOURNAMENT_CONFIG=r.data.config;
+  document.getElementById('ct-start-date').value=ctIsoToDmy(TOURNAMENT_CONFIG.matchStartDate);   // keep the (locked) form above in step
+  document.getElementById('ct-start-time').value=TOURNAMENT_CONFIG.matchStartTime||'';
   updateOnlineInfo();
-  if(document.getElementById('join-seated-overlay').classList.contains('show')&&lastJoinResult) showJoinSeated(lastJoinResult);   // a waiting player sees the new time
-  const when=ctStartText(cfg);
+  const when=ctStartText(TOURNAMENT_CONFIG);
   show(when?`✓ Match start updated to ${when}`:'✓ Match start cleared',false);
 }
 // ── KICK PLAYER — admin removes a player's seat (needs a confirm tap, so a mis-touch can't kick anyone) ──
-// For now this only updates the saved table setup on this device: the kicked player's password stops working
-// for Join Tournament. Once a real server exists, this is the spot that also drops their live connection.
+// For now this only marks the seat on the server: the kicked player's password stops working for Join Tournament.
+// When the live match is wired in, this is the spot that also drops their live connection.
 let ctKickConfirmSeat=null;                        // seat number currently asking "Kick <name>?" (only one at a time)
 function renderKickList(){
   const list=document.getElementById('ct-kick-list');
@@ -4537,13 +4576,15 @@ function renderKickList(){
 }
 function askKickPlayer(seat){ ctKickConfirmSeat=seat; renderKickList(); }
 function cancelKickPlayer(){ ctKickConfirmSeat=null; renderKickList(); }
-function kickPlayer(seat){                         // only reachable from YES, KICK
-  const pl=((TOURNAMENT_CONFIG&&TOURNAMENT_CONFIG.players)||[]).find(x=>x.seat===seat);
+async function kickPlayer(seat){                   // only reachable from YES, KICK
   ctKickConfirmSeat=null;
-  if(pl&&pl.type==='human'&&!pl.kicked){
-    pl.kicked=true;
-    try{ localStorage.setItem('kalak_tournament_config',JSON.stringify(TOURNAMENT_CONFIG)); }catch(e){}
-    if(joinedSeatNo===seat) closeJoinSeated();     // if that player is parked on the "you're seated" screen here, send them away
+  renderKickList();
+  const r=await api('/api/admin/table/kick',{adminPassword,seat});
+  if(r.ok){
+    TOURNAMENT_CONFIG=r.data.config;
+  }else{
+    showCtStatus('✗ '+(r.data.error||'Could not kick that player.'),true,5000);
+    if(r.status===404){ loadTableFromServer(); return; }   // the table was killed meanwhile
   }
   renderKickList();
 }
@@ -4562,8 +4603,9 @@ function cancelKillTable(){                        // back to the plain KILL THE
 // admin kills it) sees only the Congratulations / MATCH HAS ENDED screen instead of the holding screen.
 function recordMatchResult(name,seat,stack){
   if(!TOURNAMENT_CONFIG) return;
+  // Dormant until a match can be launched from the room. When that exists, the SERVER records the result (a player's
+  // own browser can't be trusted to say who won) and /api/join hands it to late joiners; this local copy only feeds the admin's line.
   TOURNAMENT_CONFIG.result={winner:name,winnerSeat:seat,finalStack:stack,endedAt:Date.now()};
-  try{ localStorage.setItem('kalak_tournament_config',JSON.stringify(TOURNAMENT_CONFIG)); }catch(e){}
   updateOnlineInfo();
 }
 function showMatchEnded(result){
@@ -4572,30 +4614,32 @@ function showMatchEnded(result){
 }
 function closeMatchEnded(){ document.getElementById('match-ended-overlay').classList.remove('show'); }
 
-function killTable(){                              // step 2: only reachable from YES, KILL IT
+async function killTable(){                        // step 2: only reachable from YES, KILL IT
+  const yes=document.getElementById('btn-ct-kill-yes');
+  yes.disabled=true;
+  const r=await api('/api/admin/table/kill',{adminPassword});
+  yes.disabled=false;
+  if(!r.ok){
+    showCtStatus('✗ '+(r.data.error||'Could not kill the table.'),true,5000);
+    return;
+  }
   TOURNAMENT_CONFIG=null;                          // the table no longer exists — Join Tournament will find nothing
-  try{ localStorage.removeItem('kalak_tournament_config'); }catch(e){}
-  closeJoinSeated();                               // anyone parked on the "you're seated" screen is sent away too
+  closeJoinSeated();
   closeMatchEnded();
   resetCreateTableForm();                          // back to a fresh Create Table form
   refreshCreateTableState();
   document.getElementById('admin-panel-body').scrollTop=0;
-  const st=document.getElementById('ct-status');
-  st.textContent='✓ Table killed. You can create a new one.';
-  st.classList.remove('error'); st.classList.add('show');
-  clearTimeout(window._ctStatusTimer);
-  window._ctStatusTimer=setTimeout(()=>st.classList.remove('show'),3000);
+  showCtStatus('✓ Table killed. You can create a new one.',false,3000);
 }
 
 // ── JOIN TOURNAMENT — password → seat/observer lookup ──
 // Only a confirmation ("you're seated / you're observing") for now. It does NOT start or sync a live match —
-// that needs real networking (see the design note above TOURNAMENT_CONFIG's declaration), so a match player's
-// seat here is just parked in a holding screen until that's built.
+// that needs real-time networking, so a matched player's seat here is just parked in a holding screen until
+// that's built. The password check itself happens on the server (/api/join in server.js): this page never
+// holds the password list, so there's nothing here for anyone to read out of the page source.
+let joinPassword=null;                             // the joiner's OWN password, kept in memory only so the waiting screen can re-check the table
+let joinTableInfo=null;                            // table settings the server sent for the waiting screen (start date/time etc.)
 function openJoinTournament(){
-  if(!TOURNAMENT_CONFIG){                             // no admin has created a table yet — nothing to join
-    showComingSoon('JOIN TOURNAMENT','No tournament has been created yet. Check back once the admin sets one up.');
-    return;
-  }
   document.getElementById('join-pass-input').value='';
   document.getElementById('join-pass-error').style.display='none';
   document.getElementById('join-pass-overlay').classList.add('show');
@@ -4603,65 +4647,63 @@ function openJoinTournament(){
 }
 function closeJoinPass(){ document.getElementById('join-pass-overlay').classList.remove('show'); }
 
-function submitJoinPass(){
+async function submitJoinPass(){
   const val=document.getElementById('join-pass-input').value.trim();
-  const cfg=TOURNAMENT_CONFIG;
-  if(val&&cfg){
-    // Computer seats are excluded on purpose — those are auto-filled by a bot at match start and were never
-    // meant to be joined by a password (see the "no password needed" note on the Create Table form).
-    const seatMatch=(cfg.players||[]).find(p=>p.type==='human'&&p.password===val);
-    if(seatMatch&&seatMatch.kicked){               // the admin removed this player
-      const err=document.getElementById('join-pass-error');
-      err.textContent='You have been removed from this table by the admin.';
-      err.style.display='block';
-      document.getElementById('join-pass-input').value='';
-      return;
-    }
-    if(seatMatch){ closeJoinPass(); if(cfg.result) showMatchEnded(cfg.result); else showJoinSeated({kind:'seat',player:seatMatch}); return; }
-    if(cfg.observerPassword&&val===cfg.observerPassword){ closeJoinPass(); if(cfg.result) showMatchEnded(cfg.result); else showJoinSeated({kind:'observer'}); return; }
-  }
+  const btn=document.getElementById('btn-join-pass-submit');
   const errEl=document.getElementById('join-pass-error');
-  errEl.textContent='Incorrect password';
+  btn.disabled=true;
+  const r=await api('/api/join',{password:val});
+  btn.disabled=false;
+  if(r.ok){
+    closeJoinPass();
+    if(r.data.ended) showMatchEnded({winner:r.data.winner});   // match already over: only the Congratulations / MATCH HAS ENDED screen
+    else{ joinPassword=val; showJoinSeated(r.data); }
+    return;
+  }
+  if(r.status===404){                              // no table has been created (or it was killed)
+    closeJoinPass();
+    showComingSoon('JOIN TOURNAMENT',r.data.error||'No tournament has been created yet. Check back once the admin sets one up.');
+    return;
+  }
+  errEl.textContent=r.data.error||'Incorrect password';      // wrong password, "removed by the admin", too many attempts, server unreachable…
   errEl.style.display='block';
   document.getElementById('join-pass-input').value='';
   document.getElementById('join-pass-input').focus();
 }
 document.getElementById('join-pass-input').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); submitJoinPass(); } });
 
-let lastJoinResult=null;
-let joinedSeatNo=null;                             // seat number of the player parked on the "you're seated" screen (null = none / observer)
 function showJoinSeated(result){
-  const cfg=TOURNAMENT_CONFIG;
-  lastJoinResult=result;
-  joinedSeatNo=result.kind==='seat'?result.player.seat:null;
+  const info=result.tableInfo||{};
+  joinTableInfo=info;
   const title=document.getElementById('join-seated-title');
   const sub=document.getElementById('join-seated-sub');
   const details=document.getElementById('join-seated-details');
   if(result.kind==='seat'){
     title.textContent="YOU'RE SEATED";
-    sub.textContent=`Seat ${result.player.seat} — ${result.player.name}`;
+    sub.textContent=`Seat ${result.seat} — ${result.name}`;
   }else{
     title.textContent='OBSERVING';
     sub.textContent='Watching only — no seat assigned';
   }
   const rows=[
-    `<div><b>Table:</b> ${cfg.numPlayers} seats</div>`,
-    `<div><b>Chips:</b> ₹${cfg.chipsPerPlayer}</div>`,
-    `<div><b>Boot:</b> ₹${cfg.startingBoot} · <b>Blind:</b> ₹${cfg.startingBlind}</div>`
+    `<div><b>Table:</b> ${info.numPlayers} seats</div>`,
+    `<div><b>Chips:</b> ₹${info.chipsPerPlayer}</div>`,
+    `<div><b>Boot:</b> ₹${info.startingBoot} · <b>Blind:</b> ₹${info.startingBlind}</div>`
   ];
-  if(cfg.matchStartDate||cfg.matchStartTime) rows.push(`<div><b>Starts:</b> ${ctStartText(cfg)}</div>`);
+  if(info.matchStartDate||info.matchStartTime) rows.push(`<div><b>Starts:</b> ${ctStartText(info)}</div>`);
   rows.push('<div id="join-wait"></div>');                  // filled by the countdown below
   details.innerHTML=rows.join('');
   document.getElementById('join-seated-overlay').classList.add('show');
   startJoinCountdown();
 }
-function closeJoinSeated(){ stopJoinCountdown(); joinedSeatNo=null; document.getElementById('join-seated-overlay').classList.remove('show'); }
+function closeJoinSeated(){ stopJoinCountdown(); joinPassword=null; joinTableInfo=null; document.getElementById('join-seated-overlay').classList.remove('show'); }
 
 // ── "Waiting for the match to start in 01:23:45" — live countdown on the seated / observing screen ──
 // Counts to the admin's start date/time (entered in IST = UTC+5:30). Date only → that day at 00:00; time only → today at that time.
 // With no start set — or once the time has passed — it falls back to the plain "Waiting for the match to start…".
-// It re-reads the table every second, so if the admin changes the start time the countdown follows.
-let joinCountdownTimer=null;
+// Every 10 seconds the waiting screen asks the server again, so if the admin changes the start time the countdown follows,
+// and a player who is kicked / whose table is killed / whose match has ended is moved off the waiting screen.
+let joinCountdownTimer=null, joinPollTimer=null;
 function joinStartMs(cfg){
   if(!cfg||(!cfg.matchStartDate&&!cfg.matchStartTime)) return null;
   const date=cfg.matchStartDate||new Date(Date.now()+5.5*3600*1000).toISOString().slice(0,10);
@@ -4680,14 +4722,43 @@ function tickJoinCountdown(){
   const box=document.getElementById('join-wait');
   const ov=document.getElementById('join-seated-overlay');
   if(!box||!ov||!ov.classList.contains('show')){ stopJoinCountdown(); return; }
-  const start=joinStartMs(TOURNAMENT_CONFIG);
+  const start=joinStartMs(joinTableInfo);
   const left=start===null?0:start-Date.now();
   box.innerHTML=left>0
     ? `<div class="join-waiting-note">Waiting for the match to start in</div><div id="join-countdown">${fmtCountdown(left)}</div>`
     : `<div class="join-waiting-note">Waiting for the match to start…</div>`;
 }
-function startJoinCountdown(){ stopJoinCountdown(); tickJoinCountdown(); joinCountdownTimer=setInterval(tickJoinCountdown,1000); }
-function stopJoinCountdown(){ if(joinCountdownTimer){ clearInterval(joinCountdownTimer); joinCountdownTimer=null; } }
+async function pollJoinInfo(){                     // re-check the table with the joiner's own password
+  if(!joinPassword) return;
+  const pw=joinPassword;
+  const r=await api('/api/join',{password:pw});
+  if(joinPassword!==pw) return;                    // they left the waiting screen while we were asking
+  if(r.ok){
+    if(r.data.ended){ closeJoinSeated(); showMatchEnded({winner:r.data.winner}); return; }
+    joinTableInfo=r.data.tableInfo||joinTableInfo;
+    const box=document.querySelector('#join-seated-details');
+    const startEl=box&&[...box.children].find(el=>el.textContent.startsWith('Starts:'));
+    const when=ctStartText(joinTableInfo||{});
+    if(startEl&&when) startEl.innerHTML='<b>Starts:</b> '+when;
+    tickJoinCountdown();
+    return;
+  }
+  if(r.status===403||r.status===404){              // kicked, or the table was killed
+    closeJoinSeated();
+    if(r.status===404) showComingSoon('JOIN TOURNAMENT',r.data.error||'The tournament table was closed by the admin.');
+    else showComingSoon('REMOVED',r.data.error||'You have been removed from this table by the admin.');
+  }
+}
+function startJoinCountdown(){
+  stopJoinCountdown();
+  tickJoinCountdown();
+  joinCountdownTimer=setInterval(tickJoinCountdown,1000);
+  joinPollTimer=setInterval(pollJoinInfo,10000);
+}
+function stopJoinCountdown(){
+  if(joinCountdownTimer){ clearInterval(joinCountdownTimer); joinCountdownTimer=null; }
+  if(joinPollTimer){ clearInterval(joinPollTimer); joinPollTimer=null; }
+}
 function leaveJoinSeated(){ closeJoinSeated(); }   // just dismisses the holding screen — no live seat to release yet
 
 function formatMatchTime(hhmmss){                  // "19:30" / "19:30:00" -> "7:30 PM"
