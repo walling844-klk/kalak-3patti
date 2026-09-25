@@ -4647,7 +4647,8 @@ async function killTable(){                        // step 2: only reachable fro
 // that needs real-time networking, so a matched player's seat here is just parked in a holding screen until
 // that's built. The password check itself happens on the server (/api/join in server.js): this page never
 // holds the password list, so there's nothing here for anyone to read out of the page source.
-let joinPassword=null;                             // the joiner's OWN password, kept in memory only so the waiting screen can re-check the table
+let joinPassword=null;                             // the joiner's OWN password, kept in memory only for WebSocket authentication
+let joinSeat=null, joinRole=null, matchSocket=null, matchReconnectTimer=null, matchState=null;
 let joinTableInfo=null;                            // table settings the server sent for the waiting screen (start date/time etc.)
 function openJoinTournament(){
   document.getElementById('join-pass-input').value='';
@@ -4667,7 +4668,7 @@ async function submitJoinPass(){
   if(r.ok){
     closeJoinPass();
     if(r.data.ended) showMatchEnded({winner:r.data.winner});   // match already over: only the Congratulations / MATCH HAS ENDED screen
-    else{ joinPassword=val; showJoinSeated(r.data); }
+    else{ joinPassword=val; joinSeat=r.data.seat||null; joinRole=r.data.kind||'observer'; showJoinSeated(r.data); }
     return;
   }
   if(r.status===404){                              // no table has been created (or it was killed)
@@ -4706,14 +4707,14 @@ function showJoinSeated(result){
   document.getElementById('join-seated-overlay').classList.add('show');
   startJoinCountdown();
 }
-function closeJoinSeated(){ stopJoinCountdown(); joinPassword=null; joinTableInfo=null; document.getElementById('join-seated-overlay').classList.remove('show'); }
+function closeJoinSeated(){ stopJoinCountdown(); closeMatchSocket(); joinPassword=null; joinSeat=null; joinRole=null; matchState=null; joinTableInfo=null; document.getElementById('join-seated-overlay').classList.remove('show'); }
 
 // ── "Waiting for the match to start in 01:23:45" — live countdown on the seated / observing screen ──
 // Counts to the admin's start date/time (entered in IST = UTC+5:30). Date only → that day at 00:00; time only → today at that time.
 // With no start set — or once the time has passed — it falls back to the plain "Waiting for the match to start…".
-// Every 10 seconds the waiting screen asks the server again, so if the admin changes the start time the countdown follows,
-// and a player who is kicked / whose table is killed / whose match has ended is moved off the waiting screen.
-let joinCountdownTimer=null, joinPollTimer=null;
+// The waiting screen uses the same authenticated WebSocket as live play. Lobby changes, kicks,
+// match start, reconnects, and match state arrive as server events instead of polling.
+let joinCountdownTimer=null;
 function joinStartMs(cfg){
   if(!cfg||(!cfg.matchStartDate&&!cfg.matchStartTime)) return null;
   const date=cfg.matchStartDate||new Date(Date.now()+5.5*3600*1000).toISOString().slice(0,10);
@@ -4738,36 +4739,46 @@ function tickJoinCountdown(){
     ? `<div class="join-waiting-note">Waiting for the match to start in</div><div id="join-countdown">${fmtCountdown(left)}</div>`
     : `<div class="join-waiting-note">Waiting for the match to start…</div>`;
 }
-async function pollJoinInfo(){                     // re-check the table with the joiner's own password
+function matchSocketUrl(){ return `${location.protocol==='https:'?'wss':'ws'}://${location.host}/ws`; }
+function matchSessionId(){
+  const key='kalak3patti-session';
+  let sid=localStorage.getItem(key);
+  if(!sid){ sid=(crypto.randomUUID?crypto.randomUUID():`${Date.now()}-${Math.random()}`); localStorage.setItem(key,sid); }
+  return sid;
+}
+function closeMatchSocket(){ if(matchReconnectTimer){ clearTimeout(matchReconnectTimer); matchReconnectTimer=null; } if(matchSocket){ matchSocket.onclose=null; matchSocket.close(); matchSocket=null; } }
+function updateLiveWait(text){ const box=document.getElementById('join-wait'); if(box) box.innerHTML=`<div class="join-waiting-note">${text}</div>`; }
+function handleMatchMessage(m){
+  if(m.t==='lobby'){
+    joinTableInfo=m.tableInfo||joinTableInfo; tickJoinCountdown();
+    if(m.ended){ closeJoinSeated(); showMatchEnded({winner:m.winner}); }
+  }else if(m.t==='matchState'){
+    matchState=m; updateLiveWait(m.status==='live'?'Match is live — connecting to the game…':'Match state received.');
+    if(m.gameOver) showMatchEnded({winner:m.players.find(p=>p.seat===m.king+1)?.name||'the winner'});
+  }else if(m.t==='denied'){
+    closeJoinSeated(); showComingSoon(m.code==='kicked'?'REMOVED':'JOIN TOURNAMENT',m.error||'The server closed this session.');
+  }
+}
+function connectMatchSocket(){
+  closeMatchSocket();
   if(!joinPassword) return;
-  const pw=joinPassword;
-  const r=await api('/api/join',{password:pw});
-  if(joinPassword!==pw) return;                    // they left the waiting screen while we were asking
-  if(r.ok){
-    if(r.data.ended){ closeJoinSeated(); showMatchEnded({winner:r.data.winner}); return; }
-    joinTableInfo=r.data.tableInfo||joinTableInfo;
-    const box=document.querySelector('#join-seated-details');
-    const startEl=box&&[...box.children].find(el=>el.textContent.startsWith('Starts:'));
-    const when=ctStartText(joinTableInfo||{});
-    if(startEl&&when) startEl.innerHTML='<b>Starts:</b> '+when;
-    tickJoinCountdown();
-    return;
-  }
-  if(r.status===403||r.status===404){              // kicked, or the table was killed
-    closeJoinSeated();
-    if(r.status===404) showComingSoon('JOIN TOURNAMENT',r.data.error||'The tournament table was closed by the admin.');
-    else showComingSoon('REMOVED',r.data.error||'You have been removed from this table by the admin.');
-  }
+  try{
+    matchSocket=new WebSocket(matchSocketUrl());
+    matchSocket.onopen=()=>matchSocket.send(JSON.stringify({t:'auth',password:joinPassword,sid:matchSessionId()}));
+    matchSocket.onmessage=e=>{ try{ handleMatchMessage(JSON.parse(e.data)); }catch(_){} };
+    matchSocket.onclose=()=>{ if(joinPassword){ updateLiveWait('Connection lost — retrying…'); matchReconnectTimer=setTimeout(()=>{ matchReconnectTimer=null; connectMatchSocket(); },3000); } };
+    matchSocket.onerror=()=>{};
+  }catch(_){ updateLiveWait('Live connection unavailable — please refresh.'); }
 }
 function startJoinCountdown(){
   stopJoinCountdown();
   tickJoinCountdown();
   joinCountdownTimer=setInterval(tickJoinCountdown,1000);
-  joinPollTimer=setInterval(pollJoinInfo,10000);
+  connectMatchSocket();
 }
 function stopJoinCountdown(){
   if(joinCountdownTimer){ clearInterval(joinCountdownTimer); joinCountdownTimer=null; }
-  if(joinPollTimer){ clearInterval(joinPollTimer); joinPollTimer=null; }
+  closeMatchSocket();
 }
 function leaveJoinSeated(){ closeJoinSeated(); }   // just dismisses the holding screen — no live seat to release yet
 
