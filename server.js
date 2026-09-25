@@ -4,8 +4,8 @@
 // match start date/time) so none of it ever ships in the page source. Jobs:
 //   1. Let the admin create / kill the table, kick a player and change the match start (all password-gated).
 //   2. Let a player's password be checked against the table without ever exposing the password list itself.
-// Live game-state sync (actually running a networked match) isn't wired in yet — this is the password/config
-// layer that has to exist first. See KALAK_3PATTI.html's ADMIN PANEL / JOIN TOURNAMENT code for the client side.
+// Live game-state sync is owned by MatchManager and the authenticated WebSocket layer.
+// The table config remains server-side; match snapshots are persisted separately for restart recovery.
 //
 // WHERE THE TABLE IS SAVED
 //   • If UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are set (Render → Environment) the table is saved in
