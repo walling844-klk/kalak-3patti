@@ -118,7 +118,7 @@ class RealtimeServer {
       return;
     }
     const handled = this.onMessage(message, client, this);
-    if (!handled) this.send(client, { t: 'error', code: 'not_live', error: 'Live gameplay is not enabled yet.' });
+    if (!handled) this.send(client, { t: 'error', code: 'not_live', error: 'Live gameplay is waiting for the scheduled match start or required players.' });
   }
 
   async authenticate(client, message) {
@@ -255,3 +255,4 @@ class RealtimeServer {
 }
 
 module.exports = { RealtimeServer };
+2
