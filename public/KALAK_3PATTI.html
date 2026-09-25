@@ -4345,6 +4345,7 @@ async function loadTableFromServer(){
   btn.disabled=false;
   if(r.ok){
     TOURNAMENT_CONFIG=r.data.config||null;
+    MATCH_STATUS=r.data.matchStatus||null;
     if(TOURNAMENT_CONFIG) populateCreateTableForm(TOURNAMENT_CONFIG);
     else if(!ctFormInitialized) updateSeatFieldsVisibility();
     ctFormInitialized=true;
@@ -4366,6 +4367,7 @@ function showCtStatus(text,isError,ms){            // the message line just abov
 // ── CREATE TABLE — tournament table setup ──
 const CT_DEFAULT_NUM_PLAYERS=8;                        // Min-2, Max-8; defaulted to a full table — change here if you'd rather default lower
 let TOURNAMENT_CONFIG=null;                            // the admin's in-memory copy of the table, fetched from the server — never saved in this browser
+let MATCH_STATUS=null;
 let ctFormInitialized=false;
 
 function updateSeatFieldsVisibility(){                 // only show Name/Password/Type rows for seats actually in play
@@ -4572,6 +4574,17 @@ function renderKickList(){
       row.classList.add('kicked');
       row.appendChild(name);
       const tag=document.createElement('span'); tag.className='ct-kick-tag'; tag.textContent='KICKED';
+      row.appendChild(tag);
+    }else if(MATCH_STATUS?.seats?.find(s=>s.seat===pl.seat)?.botControlled){
+      row.appendChild(name);
+      const live=MATCH_STATUS.seats.find(s=>s.seat===pl.seat);
+      const tag=document.createElement('span'); tag.className='ct-kick-tag';
+      const mins=live.returnDeadline?Math.max(0,Math.ceil((live.returnDeadline-Date.now())/60000)):0;
+      tag.textContent=`BOT · ${live.timeoutStreak||0} TIMEOUTS${mins?` · ${mins}m LEFT`:''}`;
+      row.appendChild(tag);
+    }else if(MATCH_STATUS?.seats?.find(s=>s.seat===pl.seat)?.connected){
+      row.appendChild(name);
+      const tag=document.createElement('span'); tag.className='ct-kick-tag'; tag.textContent='ONLINE';
       row.appendChild(tag);
     }else if(ctKickConfirmSeat===pl.seat){         // step 2: ask before doing anything
       row.classList.add('confirming');
