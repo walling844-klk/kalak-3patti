@@ -32,6 +32,33 @@ const manager = new MatchManager({
   assert.ok(scheduledStartMs({ matchStartDate: '2099-01-01', matchStartTime: '12:00' }) > Date.now());
   assert.ok(scheduledStartMs({ matchStartDate: '2000-01-01', matchStartTime: '12:00' }) < Date.now());
 
+  const futureConfig = { ...config, matchStartDate: '2099-01-01', matchStartTime: '12:00' };
+  let futureSaved = { ...futureConfig };
+  const futureManager = new MatchManager({
+    getConfig: () => futureSaved,
+    saveConfig: value => { futureSaved = value; },
+    loadSnapshot: () => null,
+    saveSnapshot: () => {},
+    deleteSnapshot: () => {},
+    realtime,
+  });
+  futureManager.register({ authenticated: true, role: 'player', seat: 1, name: 'Alice' });
+  futureManager.register({ authenticated: true, role: 'player', seat: 2, name: 'Bob' });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(futureManager.started, false, 'future scheduled match must not start early');
+  futureManager.close();
+
+  const malformedManager = new MatchManager({
+    getConfig: () => ({ ...config, matchStartDate: 'not-a-date', matchStartTime: '12:00' }),
+    saveConfig: () => {},
+    loadSnapshot: () => null,
+    saveSnapshot: () => {},
+    deleteSnapshot: () => {},
+    realtime,
+  });
+  assert.equal(await malformedManager.startTimeReached(), false, 'malformed schedule must block automatic start');
+  malformedManager.close();
+
   manager.register(clients[0]);
   assert.equal(manager.started, false);
   manager.register(clients[1]);
