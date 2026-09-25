@@ -33,6 +33,10 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'KALAK_3PATTI.html')));
 
 const PORT = process.env.PORT || 3000;
+// Render sets these automatically at build+run time — no setup needed. Locally (no Render) they are blank.
+const DEPLOY_COMMIT = process.env.RENDER_GIT_COMMIT || '';
+const DEPLOY_BRANCH = process.env.RENDER_GIT_BRANCH || '';
+const DEPLOY_SHORT = DEPLOY_COMMIT ? DEPLOY_COMMIT.slice(0, 7) : 'local (not on Render)';
 const CONFIG_FILE = path.join(__dirname, 'tournament-config.json');
 const REDIS_KEY = 'kalak3patti:table';
 const UPSTASH_URL = (process.env.UPSTASH_REDIS_REST_URL || '').replace(/\/+$/, '');
@@ -49,6 +53,7 @@ if (!process.env.ADMIN_PASSWORD) {
 console.log(USE_REDIS
   ? 'Table storage: Upstash Redis (survives restarts).'
   : 'Table storage: local file — on Render\'s free plan this is wiped on restart. Set UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN to keep the table saved.');
+console.log(`Deployed commit: ${DEPLOY_SHORT}${DEPLOY_BRANCH ? ' (branch ' + DEPLOY_BRANCH + ')' : ''}`);
 
 // ── storage ──────────────────────────────────────────────────────────────────────────────────────────────
 // One tiny call to Upstash's REST API: POST a JSON array like ["SET","key","value"]. Uses Node's built-in
@@ -299,5 +304,8 @@ app.post('/api/join', (req, res) => {
   recordFailure(req.ip);
   res.status(401).json({ error: 'Incorrect password' });
 });
+
+// Public on purpose — a commit hash is not a secret, and the admin panel needs it without being logged in yet.
+app.post('/api/version', (req, res) => res.json({ commit: DEPLOY_SHORT, branch: DEPLOY_BRANCH }));
 
 app.listen(PORT, () => console.log(`KALAK 3PATTI server listening on :${PORT}`));
