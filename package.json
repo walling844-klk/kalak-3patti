@@ -1,12 +1,14 @@
 {
   "name": "kalak-3patti-server",
   "version": "1.0.0",
-  "description": "Tournament server for KALAK 3PATTI — holds the table config and checks admin/seat/observer passwords server-side.",
+  "description": "Tournament server for KALAK 3PATTI \u2014 holds the table config and checks admin/seat/observer passwords server-side.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "test:engine": "node test-game-engine.js",
-    "test:realtime": "node test-realtime.js"
+    "test:realtime": "node test-realtime.js",
+    "test:match": "node test-match-manager.js",
+    "test": "npm run test:engine && npm run test:realtime && npm run test:match && node test-evaluator-crosscheck.js"
   },
   "dependencies": {
     "express": "^4.19.2",
