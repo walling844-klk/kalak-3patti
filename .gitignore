@@ -1,0 +1,4 @@
+node_modules/
+tournament-config.json
+match-state.json
+.DS_Store
