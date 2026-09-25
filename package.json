@@ -8,10 +8,11 @@
     "test:engine": "node test-game-engine.js",
     "test:realtime": "node test-realtime.js",
     "test:match": "node test-match-manager.js",
-    "test": "npm run test:engine && npm run test:realtime && npm run test:match && npm run test:phase3 && npm run test:phase4 && npm run test:phase5 && node test-evaluator-crosscheck.js",
+    "test": "npm run test:engine && npm run test:realtime && npm run test:match && npm run test:phase3 && npm run test:phase4 && npm run test:phase5 && npm run test:phase6 && node test-evaluator-crosscheck.js",
     "test:phase3": "node test-phase3.js",
     "test:phase4": "node test-match-manager.js",
-    "test:phase5": "node test-phase5.js"
+    "test:phase5": "node test-phase5.js",
+    "test:phase6": "node test-phase6.js"
   },
   "dependencies": {
     "express": "^4.19.2",
