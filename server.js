@@ -20,6 +20,7 @@ const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const https = require('https');
+const { RealtimeServer } = require('./realtime');
 
 const app = express();
 app.use(express.json());
@@ -105,6 +106,7 @@ async function writeStored(cfg) {                    // cfg === null deletes the
 // hiccup can never look like a killed table (or let someone overwrite the saved one).
 let TOURNAMENT_CONFIG = null;
 let loaded = false;
+let realtime = null;
 async function ensureLoaded() {
   if (loaded) return;
   TOURNAMENT_CONFIG = await readStored();
@@ -235,6 +237,7 @@ app.post('/api/admin/table', wrap(async (req, res) => {
   const { config, error } = sanitizeConfig((req.body || {}).config);
   if (error) return res.status(400).json({ error });
   await commit(config);
+  if (realtime) realtime.broadcastLobby(TOURNAMENT_CONFIG);
   res.json({ ok: true, config });
 }));
 
@@ -242,6 +245,7 @@ app.post('/api/admin/table', wrap(async (req, res) => {
 app.post('/api/admin/table/kill', wrap(async (req, res) => {
   if (!requireAdmin(req, res)) return;
   await commit(null);
+  if (realtime) realtime.broadcastLobby(null);
   res.json({ ok: true });
 }));
 
@@ -256,6 +260,7 @@ app.post('/api/admin/table/kick', wrap(async (req, res) => {
   if (!target.kicked) {
     const next = { ...TOURNAMENT_CONFIG, players: TOURNAMENT_CONFIG.players.map(p => p.seat === seat ? { ...p, kicked: true } : p) };
     await commit(next);
+    if (realtime) realtime.broadcastLobby(TOURNAMENT_CONFIG);
   }
   res.json({ ok: true, config: TOURNAMENT_CONFIG });
 }));
@@ -270,6 +275,7 @@ app.post('/api/admin/table/start', wrap(async (req, res) => {
   if (!validDate(matchStartDate)) return res.status(400).json({ error: 'Match start date must be a real date.' });
   if (!validTime(matchStartTime)) return res.status(400).json({ error: 'Match start time is not valid.' });
   await commit({ ...TOURNAMENT_CONFIG, matchStartDate, matchStartTime });
+  if (realtime) realtime.broadcastLobby(TOURNAMENT_CONFIG);
   res.json({ ok: true, config: TOURNAMENT_CONFIG });
 }));
 
@@ -308,4 +314,11 @@ app.post('/api/join', (req, res) => {
 // Public on purpose — a commit hash is not a secret, and the admin panel needs it without being logged in yet.
 app.post('/api/version', (req, res) => res.json({ commit: DEPLOY_SHORT, branch: DEPLOY_BRANCH }));
 
-app.listen(PORT, () => console.log(`KALAK 3PATTI server listening on :${PORT}`));
+const httpServer = http.createServer(app);
+realtime = new RealtimeServer({
+  server: httpServer,
+  getConfig: async () => { if (!loaded) await ensureLoaded(); return TOURNAMENT_CONFIG; },
+  checkBlocked: ip => blocked(ip),
+  recordFailure: ip => recordFailure(ip),
+});
+httpServer.listen(PORT, () => console.log(`KALAK 3PATTI server listening on :${PORT}`));
