@@ -3266,6 +3266,7 @@ function render(){
     if(st){
       let cls,txt;
       if(p.standing){ cls='out'; txt='WATCHING'; }                    // stood up: out of the game, still in the room
+      else if(p.absent&&p.botControlled){ cls='out'; txt='BOT'; }
       else if(p.folded){ cls=p.hand.length?'packed':'out'; txt=p.hand.length?'PACKED':'OUT'; }  // OUT = sat the round out (couldn't afford the boot)
       else if(p.seen){ cls='seen'; txt='SEEN'; }
       else { cls='blind'; txt='BLIND'; }
@@ -4791,6 +4792,9 @@ function serverPlayerFromState(player, index){
     lastBet:Number(player.bet)||0,
     isBot:false,
     avatarIdx:index,
+    absent:!!player.absent,
+    botControlled:!!player.botControlled,
+    returnDeadline:player.returnDeadline||null,
   };
 }
 function applyServerMatchState(state){
