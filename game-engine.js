@@ -1,5 +1,17 @@
 'use strict';
 
+const crypto = require('crypto');
+
+// Fair, non-manipulable default random source for a real-money-adjacent shuffle/dealer pick.
+// Kept to the same () => number in [0, 1) contract as Math.random() so every existing call site
+// (shuffledDeck, the initial dealer pick) needs no change. Tests still override it via
+// options.random / the shuffledDeck(random) param for repeatable, seeded runs.
+function secureRandom() {
+  // 2**32 stays well under crypto.randomInt's 2**48 ceiling while giving Math.random()-level
+  // precision.
+  return crypto.randomInt(0, 4294967296) / 4294967296;
+}
+
 const DEFAULTS = Object.freeze({
   seats: 8,
   startingChips: 5000,
@@ -18,7 +30,7 @@ function makeDeck() {
   return deck;
 }
 
-function shuffledDeck(random = Math.random) {
+function shuffledDeck(random = secureRandom) {
   const deck = makeDeck();
   for (let i = deck.length - 1; i > 0; i -= 1) {
     const j = Math.floor(random() * (i + 1));
@@ -66,7 +78,7 @@ class TeenPattiEngine {
   constructor(options = {}) {
     this.options = { ...DEFAULTS, ...options };
     this.seats = this.options.seats;
-    this.random = options.random || Math.random;
+    this.random = options.random || secureRandom;
     this.players = Array.from({ length: this.seats }, (_, seat) => ({
       seat,
       name: options.names?.[seat] || `Player${seat + 1}`,
@@ -354,4 +366,4 @@ class TeenPattiEngine {
   }
 }
 
-module.exports = { TeenPattiEngine, evaluateHand, compareHands, makeDeck, shuffledDeck, cardKey };
+module.exports = { TeenPattiEngine, evaluateHand, compareHands, makeDeck, shuffledDeck, cardKey, secureRandom };
