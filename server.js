@@ -21,6 +21,7 @@ const path = require('path');
 const http = require('http');
 const https = require('https');
 const { RealtimeServer } = require('./realtime');
+const { MatchManager } = require('./match-manager');
 
 const app = express();
 app.use(express.json());
@@ -40,6 +41,7 @@ const DEPLOY_BRANCH = process.env.RENDER_GIT_BRANCH || '';
 const DEPLOY_SHORT = DEPLOY_COMMIT ? DEPLOY_COMMIT.slice(0, 7) : 'local (not on Render)';
 const CONFIG_FILE = path.join(__dirname, 'tournament-config.json');
 const REDIS_KEY = 'kalak3patti:table';
+const MATCH_KEY = 'kalak3patti:match';
 const UPSTASH_URL = (process.env.UPSTASH_REDIS_REST_URL || '').replace(/\/+$/, '');
 const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || '';
 const USE_REDIS = !!(UPSTASH_URL && UPSTASH_TOKEN);
@@ -100,6 +102,23 @@ async function writeStored(cfg) {                    // cfg === null deletes the
   if (cfg === null) { try { fs.unlinkSync(CONFIG_FILE); } catch (e) { /* already gone */ } }
   else fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2));
 }
+async function readMatchSnapshot() {
+  if (USE_REDIS) {
+    const raw = await redisCmd(['GET', MATCH_KEY]);
+    return raw ? JSON.parse(raw) : null;
+  }
+  try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'match-state.json'), 'utf8')); } catch (e) { return null; }
+}
+async function writeMatchSnapshot(snapshot) {
+  if (USE_REDIS) {
+    if (snapshot === null) await redisCmd(['DEL', MATCH_KEY]);
+    else await redisCmd(['SET', MATCH_KEY, JSON.stringify(snapshot)]);
+    return;
+  }
+  const file = path.join(__dirname, 'match-state.json');
+  if (snapshot === null) { try { fs.unlinkSync(file); } catch (e) { /* already gone */ } }
+  else fs.writeFileSync(file, JSON.stringify(snapshot));
+}
 
 // The table lives in memory (fast) and is written through to storage on every change. It is loaded once at
 // startup; if storage can't be reached the API answers 503 instead of pretending "no table exists" — that way a
@@ -107,6 +126,7 @@ async function writeStored(cfg) {                    // cfg === null deletes the
 let TOURNAMENT_CONFIG = null;
 let loaded = false;
 let realtime = null;
+let matchManager = null;
 async function ensureLoaded() {
   if (loaded) return;
   TOURNAMENT_CONFIG = await readStored();
@@ -245,6 +265,7 @@ app.post('/api/admin/table', wrap(async (req, res) => {
 app.post('/api/admin/table/kill', wrap(async (req, res) => {
   if (!requireAdmin(req, res)) return;
   await commit(null);
+  if (matchManager) { matchManager.close(); await matchManager.deleteSnapshot(); }
   if (realtime) realtime.broadcastLobby(null);
   res.json({ ok: true });
 }));
@@ -320,5 +341,17 @@ realtime = new RealtimeServer({
   getConfig: async () => { if (!loaded) await ensureLoaded(); return TOURNAMENT_CONFIG; },
   checkBlocked: ip => blocked(ip),
   recordFailure: ip => recordFailure(ip),
+  onAuthenticated: client => { if (matchManager) matchManager.register(client); },
+  onClose: client => { if (matchManager) matchManager.unregister(client); },
+  onMessage: (message, client) => matchManager ? matchManager.handleMessage(message, client) : false,
 });
+matchManager = new MatchManager({
+  getConfig: async () => { if (!loaded) await ensureLoaded(); return TOURNAMENT_CONFIG; },
+  saveConfig: commit,
+  loadSnapshot: readMatchSnapshot,
+  saveSnapshot: writeMatchSnapshot,
+  deleteSnapshot: () => writeMatchSnapshot(null),
+  realtime,
+});
+matchManager.restoreIfPresent().catch(error => console.error('Match restore failed:', error.message));
 httpServer.listen(PORT, () => console.log(`KALAK 3PATTI server listening on :${PORT}`));
