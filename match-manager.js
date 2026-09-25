@@ -6,6 +6,8 @@ const TURN_TIMEOUT_MS = 30_000;
 const NEXT_ROUND_DELAY_MS = 1_500;
 const LIFECYCLE_TICK_MS = 1_000;
 const BOT_TURN_DELAY_MS = 450;
+const RETURN_WINDOW_MS = 10 * 60 * 1000;
+const BOT_TAKEOVER_ROUNDS = 3;
 
 function scheduledStartMs(config) {
   if (!config || (!config.matchStartDate && !config.matchStartTime)) return null;
@@ -30,6 +32,7 @@ class MatchManager {
     this.restoring = false;
     this.connectedSeats = new Set();
     this.computerSeats = new Set();
+    this.absences = new Map();
     this.turnTimer = null;
     this.nextRoundTimer = null;
     this.botTimer = null;
@@ -39,6 +42,7 @@ class MatchManager {
   }
 
   async lifecycleTick() {
+    await this.expireAbsences();
     if (this.started || this.starting || this.restoring) return;
     await this.maybeStart();
   }
@@ -52,6 +56,7 @@ class MatchManager {
       return false;
     }
     this.engine = TeenPattiEngine.restore(snapshot);
+    this.absences = new Map(Array.isArray(snapshot.absences) ? snapshot.absences.map(item => [item.seat, item]) : []);
     this.computerSeats = new Set((config.players || []).filter(p => p.type === 'computer' && !p.kicked).map(p => p.seat - 1));
     this.started = true;
     this.restoring = false;
@@ -72,13 +77,72 @@ class MatchManager {
 
   register(client) {
     if (client.role !== 'player' || client.seat == null) return;
-    this.connectedSeats.add(client.seat - 1);
+    const seat = client.seat - 1;
+    this.connectedSeats.add(seat);
+    const absence = this.absences.get(seat);
+    if (absence) {
+      absence.returnedAt = Date.now();
+      absence.connected = true;
+      absence.botControlled = false;
+      this.absences.delete(seat);
+      this.computerSeats.delete(seat);
+    }
     if (!this.started) this.maybeStart().catch(error => console.error('Match start failed:', error.message));
     else this.sendState(client);
   }
 
   unregister(client) {
-    if (client.role === 'player' && client.seat != null) this.connectedSeats.delete(client.seat - 1);
+    if (client.role !== 'player' || client.seat == null) return;
+    const seat = client.seat - 1;
+    if (this.realtime?.sessions?.get(client.seat) && this.realtime.sessions.get(client.seat) !== client) return;
+    this.connectedSeats.delete(seat);
+    if (this.started && this.engine && !this.engine.gameOver) {
+      const existing = this.absences.get(seat);
+      const absence = existing || { seat, disconnectedAt: Date.now(), deadline: Date.now() + RETURN_WINDOW_MS, missedRounds: 0, botControlled: true };
+      absence.disconnectedAt = absence.disconnectedAt || Date.now();
+      absence.deadline = absence.deadline || Date.now() + RETURN_WINDOW_MS;
+      absence.connected = false;
+      absence.botControlled = true;
+      this.absences.set(seat, absence);
+      this.computerSeats.add(seat);
+      this.broadcastState();
+      this.maybeBotTurn();
+    }
+  }
+
+  async expireAbsences() {
+    if (!this.started || !this.engine || this.engine.gameOver) return;
+    const now = Date.now();
+    for (const [seat, absence] of this.absences) {
+      if (absence.connected || now < absence.deadline) continue;
+      await this.kickAbsentSeat(seat, absence);
+    }
+  }
+
+  async kickAbsentSeat(seat, absence) {
+    if (!this.engine || !this.absences.has(seat)) return;
+    const player = this.engine.players[seat];
+    if (!player || player.standing) { this.absences.delete(seat); return; }
+    if (this.engine.currentSeat === seat && !this.engine.roundOver) this.engine.timeout(seat);
+    const share = player.chips;
+    const recipients = this.engine.players.filter(p => p.seat !== seat && !p.standing && !p.folded);
+    if (share > 0 && recipients.length) {
+      const each = Math.floor(share / recipients.length);
+      let remainder = share - each * recipients.length;
+      for (const recipient of recipients) { recipient.chips += each + (remainder-- > 0 ? 1 : 0); }
+      player.chips = 0;
+    }
+    player.standing = true;
+    player.folded = true;
+    this.absences.delete(seat);
+    this.computerSeats.delete(seat);
+    const config = await this.getConfig();
+    if (config) {
+      const next = { ...config, players: config.players.map(p => p.seat === seat + 1 ? { ...p, kicked: true } : p) };
+      await this.saveConfig(next);
+      if (this.realtime?.broadcastLobby) this.realtime.broadcastLobby(next);
+    }
+    await this.afterAction();
   }
 
   async allRequiredPlayersReady() {
@@ -140,6 +204,9 @@ class MatchManager {
         standing: player.standing, seen: player.seen, bet: player.bet,
         hand: player.seat === ownSeat ? player.hand : null,
         actions: client.role === 'player' && player.seat === ownSeat ? this.engine.actionsFor(player.seat) : undefined,
+        absent: this.absences.has(player.seat) ? true : undefined,
+        botControlled: this.absences.get(player.seat)?.botControlled || this.computerSeats.has(player.seat) || undefined,
+        returnDeadline: this.absences.get(player.seat)?.deadline || undefined,
       })),
     };
   }
@@ -154,6 +221,7 @@ class MatchManager {
   async persist() {
     if (!this.engine) return;
     const snapshot = this.engine.snapshot();
+    snapshot.absences = [...this.absences.values()];
     this.persisting = this.persisting.then(() => this.saveSnapshot(snapshot));
     await this.persisting;
   }
@@ -239,7 +307,13 @@ class MatchManager {
       const result = { winner: winner?.name || null, winnerSeat: this.engine.king + 1, finalStack: winner?.chips || 0, endedAt: Date.now() };
       await this.setStatus('ended', result);
       await this.deleteSnapshot();
-    } else if (this.engine.roundOver) this.scheduleNextRound();
+    } else if (this.engine.roundOver) {
+      for (const absence of this.absences.values()) {
+        absence.missedRounds += 1;
+        if (absence.missedRounds >= BOT_TAKEOVER_ROUNDS) absence.botControlled = true;
+      }
+      this.scheduleNextRound();
+    }
     this.broadcastState();
     this.armTurnTimer();
     this.maybeBotTurn();
@@ -265,4 +339,4 @@ class MatchManager {
   }
 }
 
-module.exports = { MatchManager, TURN_TIMEOUT_MS, scheduledStartMs };
+module.exports = { MatchManager, TURN_TIMEOUT_MS, RETURN_WINDOW_MS, BOT_TAKEOVER_ROUNDS, scheduledStartMs };
