@@ -10,13 +10,21 @@ const RETURN_WINDOW_MS = 10 * 60 * 1000;
 const DISCONNECT_GRACE_MS = 30_000;
 const BOT_TAKEOVER_ROUNDS = 3;
 
+function istDateString(now = Date.now()) {
+  // Use the IST calendar date for time-only schedules. UTC can still be on
+  // the previous day while the owner is already on the next IST day.
+  return new Date(now + (5.5 * 60 * 60 * 1000)).toISOString().slice(0, 10);
+}
+
 function scheduledStartMs(config) {
   if (!config || (!config.matchStartDate && !config.matchStartTime)) return null;
-  const date = config.matchStartDate || new Date().toISOString().slice(0, 10);
+  const date = config.matchStartDate || istDateString();
   let time = config.matchStartTime || '00:00';
   if (time.length === 5) time += ':00';
   const parsed = Date.parse(`${date}T${time}+05:30`);
-  return Number.isFinite(parsed) ? parsed : null;
+  // null means “no schedule configured”; malformed saved schedules must not
+  // be treated as an immediate start by the caller.
+  return Number.isFinite(parsed) ? parsed : NaN;
 }
 
 class MatchManager {
@@ -179,7 +187,9 @@ class MatchManager {
   async startTimeReached() {
     const config = await this.getConfig();
     const start = scheduledStartMs(config);
-    return start === null || Date.now() >= start;
+    if (start === null) return true;
+    if (!Number.isFinite(start)) return false;
+    return Date.now() >= start;
   }
 
   async maybeStart() {
