@@ -268,10 +268,10 @@ app.post('/api/admin/login', (req, res) => {
 });
 
 // ── ADMIN: read the current table (including passwords — only the admin who set them can see them again) ──
-app.post('/api/admin/table/get', (req, res) => {
+app.post('/api/admin/table/get', wrap(async (req, res) => {
   if (!requireAdmin(req, res)) return;
-  res.json({ config: TOURNAMENT_CONFIG });
-});
+  res.json({ config: TOURNAMENT_CONFIG, matchStatus: matchManager ? await matchManager.adminState() : null });
+}));
 
 // ── ADMIN: create the table. Refuses if one is already online — kill it first. ──
 app.post('/api/admin/table', wrap(async (req, res) => {
@@ -304,6 +304,7 @@ app.post('/api/admin/table/kick', wrap(async (req, res) => {
   if (!target.kicked) {
     const next = { ...TOURNAMENT_CONFIG, players: TOURNAMENT_CONFIG.players.map(p => p.seat === seat ? { ...p, kicked: true } : p) };
     await commit(next);
+    if (matchManager) await matchManager.adminKick(seat);
     if (realtime) realtime.broadcastLobby(TOURNAMENT_CONFIG);
   }
   res.json({ ok: true, config: TOURNAMENT_CONFIG });
