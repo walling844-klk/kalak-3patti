@@ -2173,7 +2173,7 @@ body{
 // ═══════════════════════
 const SUITS_SYM = ['♣','♦','♥','♠'];
 const RED_S = [1,2];
-const NAMES  = ['Karan','Priya','Aman','Neha','Arjun','Vikram','Rohan','Simran'];
+let NAMES  = ['Karan','Priya','Aman','Neha','Arjun','Vikram','Rohan','Simran'];
 // Fixed CHAIR rule (by on-screen slot, not by which player is sitting there): the 2nd and 3rd chairs
 // clockwise from you (your on-screen left) always anchor their bet chip to the right; the 7th and 8th
 // chairs clockwise from you (your on-screen right) always anchor theirs to the left. Keyed by SLOT so
@@ -2669,7 +2669,7 @@ let G={
   roundOver:false,
   showdown:false,       // how the round ended: true = SHOW (hands revealed), false = everyone else packed (winner's hand stays hidden)
   gameOver:false,       // true once only ONE seat can still pay the boot — no more rounds are dealt
-  tournamentMatch:false,// will be true for a match launched from the tournament room (not wired yet — needs the server); only then is the result stored on the room
+  tournamentMatch:false,// true when this page is rendering the server-owned tournament match
   kingIdx:null,         // that last seat (the King of the table)
   matchStart:0,         // Date.now() when the FIRST card of the match was dealt (0 = match clock not started yet)
   matchTimerInt:null,   // setInterval id repainting the match timer in the top bar
@@ -3389,6 +3389,10 @@ function renderPotChips(){
 // One source of truth for "can seat X do Y?". The action bar greys buttons from it, the bots choose from it,
 // and performAction() refuses anything it doesn't allow — so no seat can ever do something another seat can't.
 function availableActions(idx){
+  if(G.tournamentMatch && idx===LOCAL_SEAT && serverActions){
+    const a={...serverActions, myTurn:G.currentIdx===idx, inHand:G.players.filter(x=>!x.folded).length, raiseBet:G.currentBet*2, raisePay:serverActions.raise?G.currentBet*2:0, sideshowTarget:serverActions.sideshowTarget, ssUsed:false, ssDenied:false, ssBroke:false};
+    return a;
+  }
   const p=G.players[idx];
   const a={pack:false,see:false,blind:false,chaal:false,raise:false,show:false,sideshow:false,
            myTurn:false,inHand:G.players.filter(x=>!x.folded).length,
@@ -3502,6 +3506,14 @@ function doAction(type){
 // type: 'pack' | 'see' | 'blind' | 'chaal' | 'raise' | 'show' | 'sideshow'
 // Returns true if the action was carried out.
 function performAction(idx,type){
+  if(G.tournamentMatch){
+    if(idx!==LOCAL_SEAT) return false;
+    const a=availableActions(idx);
+    if(type==='show'&&!a.show&&a.sideshow) type='sideshow';
+    if(!a[type]){ explainDenied(type,a); return false; }
+    serverSend({t:'action',action:type});
+    return true;
+  }
   const p=G.players[idx];
   if(!p) return false;
   const a=availableActions(idx);
@@ -3647,6 +3659,7 @@ function botAnswersSideshow(){
 
 // The answer — from the ACCEPT / DENY buttons, from a bot, or from the countdown running out (timedOut=true).
 function respondSideshow(accept,timedOut){
+  if(G.tournamentMatch){ serverSend({t:'sideshowResponse',accept:!!accept}); return; }
   const ss=G.sideshow;
   if(!ss||ss.phase!=='ask') return;                // nothing pending (e.g. a second tap, or it already lapsed)
   clearTimeout(G.sideshowTimer);
@@ -4244,7 +4257,7 @@ function endGameIfDecided(){
   const wo=document.getElementById('winner-overlay');
   if(wo.classList.contains('show')){ wo.classList.remove('show'); showKing(); }   // (if the result isn't up yet, resolveRound's own timer shows the King)
 }
-function menuStandUp(){ closeMenu(); standUp(LOCAL_SEAT); }
+function menuStandUp(){ closeMenu(); if(G.tournamentMatch){ serverSend({t:'standUp'}); return; } standUp(LOCAL_SEAT); }
 
 // MAIN MENU — ADMIN PANEL / JOIN TOURNAMENT (placeholders until those screens exist)
 function showComingSoon(title,sub){
@@ -4648,7 +4661,7 @@ async function killTable(){                        // step 2: only reachable fro
 // that's built. The password check itself happens on the server (/api/join in server.js): this page never
 // holds the password list, so there's nothing here for anyone to read out of the page source.
 let joinPassword=null;                             // the joiner's OWN password, kept in memory only for WebSocket authentication
-let joinSeat=null, joinRole=null, matchSocket=null, matchReconnectTimer=null, matchState=null;
+let joinSeat=null, joinRole=null, matchSocket=null, matchReconnectTimer=null, matchState=null, serverActions=null;
 let joinTableInfo=null;                            // table settings the server sent for the waiting screen (start date/time etc.)
 function openJoinTournament(){
   document.getElementById('join-pass-input').value='';
@@ -4753,12 +4766,80 @@ function handleMatchMessage(m){
     joinTableInfo=m.tableInfo||joinTableInfo; tickJoinCountdown();
     if(m.ended){ closeJoinSeated(); showMatchEnded({winner:m.winner}); }
   }else if(m.t==='matchState'){
-    matchState=m; updateLiveWait(m.status==='live'?'Match is live — connecting to the game…':'Match state received.');
+    matchState=m;
+    if(!G.tournamentMatch) startServerMatchUI(m);
+    else applyServerMatchState(m);
+    updateLiveWait(m.status==='live'?'Match is live — game state connected.':'Match state received.');
     if(m.gameOver) showMatchEnded({winner:m.players.find(p=>p.seat===m.king+1)?.name||'the winner'});
   }else if(m.t==='denied'){
     closeJoinSeated(); showComingSoon(m.code==='kicked'?'REMOVED':'JOIN TOURNAMENT',m.error||'The server closed this session.');
   }
 }
+function serverSend(message){
+  if(matchSocket&&matchSocket.readyState===WebSocket.OPEN) matchSocket.send(JSON.stringify(message));
+  else msg('Reconnecting to the table…');
+}
+function serverPlayerFromState(player, index){
+  return {
+    name:player.name||`Player${index+1}`,
+    chips:Number(player.chips)||0,
+    standing:!!player.standing,
+    folded:!!player.folded,
+    seen:!!player.seen,
+    hand:Array.isArray(player.hand)?player.hand:[],
+    bet:Number(player.bet)||0,
+    lastBet:Number(player.bet)||0,
+    isBot:false,
+    avatarIdx:index,
+  };
+}
+function applyServerMatchState(state){
+  if(!state||!Array.isArray(state.players)) return;
+  const count=Math.min(NUM_SEATS,state.players.length);
+  const mapped=state.players.slice(0,count).map(serverPlayerFromState);
+  while(mapped.length<NUM_SEATS) mapped.push({name:'Empty seat',chips:0,standing:true,folded:true,seen:false,hand:[],bet:0,lastBet:0,isBot:false,avatarIdx:mapped.length});
+  G.players=mapped;
+  G.pot=Number(state.pot)||0;
+  G.currentBet=Number(state.currentBet)||G.currentBet;
+  G.currentBoot=Number(state.currentBoot)||G.currentBoot;
+  G.pendingBoot=null;
+  G.round=Number(state.round)||1;
+  G.currentIdx=Number.isInteger(state.currentSeat)?state.currentSeat:-1;
+  G.dealerIdx=Number.isInteger(state.dealer)?state.dealer:-1;
+  G.lastWinnerIdx=Number.isInteger(state.lastWinner)?state.lastWinner:null;
+  G.roundOver=!!state.roundOver;
+  G.gameOver=!!state.gameOver;
+  G.kingIdx=Number.isInteger(state.king)?state.king:null;
+  G.showdown=false;
+  G.collectingBoot=false;
+  G.sideshow=state.pendingSideshow?{reqIdx:state.pendingSideshow.asker-1,tgtIdx:state.pendingSideshow.target-1,phase:'ask'}:null;
+  const ssReq=state.pendingSideshow;
+  const ssOverlay=document.getElementById('ssreq-overlay');
+  if(ssReq&&ssReq.target-1===LOCAL_SEAT){
+    document.getElementById('ssq-title').textContent='SIDESHOW REQUEST';
+    document.getElementById('ssq-text').textContent=`${G.players[ssReq.asker-1]?.name||'A player'} asks you for a SIDESHOW`;
+    if(ssOverlay) ssOverlay.classList.add('show');
+  }else if(ssOverlay){ ssOverlay.classList.remove('show'); }
+  G.ssAskedSeat=Number.isInteger(state.sideshowAskedSeat)?state.sideshowAskedSeat-1:-1;
+  G.ssAskDenied=false;
+  G.handId=state.round||G.handId;
+  serverActions=state.players[LOCAL_SEAT]?.actions||null;
+  clearInterval(G.timerInt); G.timerInt=null; G.timerOn=false;
+  render();
+}
+function startServerMatchUI(state){
+  G.tournamentMatch=true;
+  const players=state.players||[];
+  if(joinSeat!=null) LOCAL_SEAT=Math.max(0,Math.min(NUM_SEATS-1,joinSeat-1));
+  NAMES=NAMES.map((name,index)=>players[index]?.name||name);
+  document.getElementById('start-overlay').style.display='none';
+  document.getElementById('join-seated-overlay').classList.remove('show');
+  initPlayers();
+  buildSeats();
+  applyServerMatchState(state);
+  msg('Connected to the server-controlled match.');
+}
+
 function connectMatchSocket(){
   closeMatchSocket();
   if(!joinPassword) return;
