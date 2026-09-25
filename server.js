@@ -24,7 +24,7 @@ const { RealtimeServer } = require('./realtime');
 const { MatchManager } = require('./match-manager');
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '32kb', strict: true }));
 // Render (and most PaaS hosts) sit behind a reverse proxy, so the raw socket address Express sees is the proxy's.
 // `trust proxy` makes Express read the real client IP from X-Forwarded-For, which the rate limit below relies on.
 app.set('trust proxy', 1);
@@ -45,6 +45,24 @@ const MATCH_KEY = 'kalak3patti:match';
 const UPSTASH_URL = (process.env.UPSTASH_REDIS_REST_URL || '').replace(/\/+$/, '');
 const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || '';
 const USE_REDIS = !!(UPSTASH_URL && UPSTASH_TOKEN);
+const startedAt = Date.now();
+const apiHits = new Map();
+const auditEvents = [];
+function audit(event, details = {}) {
+  const safe = { at: new Date().toISOString(), event, ...details };
+  auditEvents.push(safe);
+  if (auditEvents.length > 200) auditEvents.shift();
+  console.log(JSON.stringify({ scope: 'audit', ...safe }));
+}
+function apiRateLimit(req, res, next) {
+  const ip = req.ip || 'unknown';
+  const now = Date.now();
+  const rec = apiHits.get(ip);
+  if (!rec || now > rec.reset) apiHits.set(ip, { count: 1, reset: now + 60000 });
+  else if (++rec.count > 120) return res.status(429).json({ error: 'Too many requests — try again later.' });
+  next();
+}
+setInterval(() => { const now = Date.now(); for (const [ip, rec] of apiHits) if (now > rec.reset) apiHits.delete(ip); }, 60000).unref();
 
 // ── admin password: from an environment variable so it's never committed to source control. If none is set
 // a random one is generated and printed once (there is never a guessable default in the code). Set
@@ -136,13 +154,18 @@ async function commit(newCfg) {                      // save first, only then ch
   await writeStored(newCfg);
   TOURNAMENT_CONFIG = newCfg;
 }
-app.use('/api', async (req, res, next) => {
+app.use('/api', apiRateLimit, async (req, res, next) => {
   try { await ensureLoaded(); next(); }
   catch (e) {
     console.error('Storage load failed:', e.message);
     res.status(503).json({ error: 'Saved table temporarily unavailable — try again in a moment.' });
   }
 });
+
+// Public operational endpoints contain no passwords, cards, or player secrets.
+app.get('/healthz', (req, res) => res.json({ ok: true, uptime: Math.floor((Date.now() - startedAt) / 1000), storage: USE_REDIS ? 'upstash' : 'local' }));
+app.get('/api/health', (req, res) => res.json({ ok: true, uptime: Math.floor((Date.now() - startedAt) / 1000), storage: USE_REDIS ? 'upstash' : 'local', table: Boolean(TOURNAMENT_CONFIG), status: TOURNAMENT_CONFIG?.status || 'waiting' }));
+app.get('/api/metrics', (req, res) => res.json({ uptime: Math.floor((Date.now() - startedAt) / 1000), storage: USE_REDIS ? 'upstash' : 'local', table: Boolean(TOURNAMENT_CONFIG), status: TOURNAMENT_CONFIG?.status || 'waiting', match: matchManager?.getMetrics?.() || null, auditEvents: auditEvents.slice(-20) }));
 
 // ── helpers ──────────────────────────────────────────────────────────────────────────────────────────────
 // constant-time compare so a wrong-password response can't be timed to leak how many characters matched
@@ -352,6 +375,7 @@ matchManager = new MatchManager({
   saveSnapshot: writeMatchSnapshot,
   deleteSnapshot: () => writeMatchSnapshot(null),
   realtime,
+  audit,
 });
 matchManager.restoreIfPresent().catch(error => console.error('Match restore failed:', error.message));
 httpServer.listen(PORT, () => console.log(`KALAK 3PATTI server listening on :${PORT}`));
