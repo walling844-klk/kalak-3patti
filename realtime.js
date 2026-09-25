@@ -14,13 +14,15 @@ function safeEqual(a, b) {
 }
 
 class RealtimeServer {
-  constructor({ server, getConfig, checkBlocked, recordFailure, allowedOrigins = [], onMessage } = {}) {
+  constructor({ server, getConfig, checkBlocked, recordFailure, allowedOrigins = [], onMessage, onAuthenticated, onClose } = {}) {
     if (!server || !getConfig) throw new Error('RealtimeServer requires an HTTP server and getConfig callback');
     this.getConfig = getConfig;
     this.checkBlocked = checkBlocked || (() => false);
     this.recordFailure = recordFailure || (() => {});
     this.allowedOrigins = new Set(allowedOrigins.filter(Boolean));
     this.onMessage = onMessage || (() => false);
+    this.onAuthenticated = onAuthenticated || (() => {});
+    this.onClose = onClose || (() => {});
     this.sessions = new Map();
     this.clients = new Set();
     this.wss = new WebSocketServer({ server, path: '/ws', maxPayload: 8192 });
@@ -178,6 +180,7 @@ class RealtimeServer {
     client.name = name;
     this.sendLobby(client, config);
     this.send(client, { t: 'authed', role, seat, name, sid });
+    this.onAuthenticated(client);
   }
 
   safeTableInfo(config) {
@@ -240,6 +243,7 @@ class RealtimeServer {
 
   release(client) {
     this.clients.delete(client);
+    this.onClose(client);
     if (client.seat != null && this.sessions.get(client.seat) === client) this.sessions.delete(client.seat);
   }
 
