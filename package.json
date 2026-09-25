@@ -4,7 +4,8 @@
   "description": "Tournament server for KALAK 3PATTI — holds the table config and checks admin/seat/observer passwords server-side.",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test:engine": "node test-game-engine.js"
   },
   "dependencies": {
     "express": "^4.19.2"
