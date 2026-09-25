@@ -1463,6 +1463,7 @@ body{
 }
 #ct-status.show{display:block;}
 #ct-status.error{background:rgba(231,76,60,0.15);border-color:rgba(231,76,60,0.55);color:#ff9d92;}
+#admin-deploy-version{margin-top:14px;font-size:0.68rem;letter-spacing:0.4px;color:var(--text-dim);text-align:center;opacity:0.85;}
 #ct-actions{display:flex;gap:10px;margin-top:16px;}
 #ct-actions button{
   flex:1;border:none;border-radius:12px;padding:10px 0;
@@ -1984,6 +1985,7 @@ body{
           <span class="mi-icon">🃏</span>
           <span class="mi-text"><b>Create Table</b><small>Seats, names, passwords, chips &amp; blinds for the tournament</small></span>
         </button>
+        <div id="admin-deploy-version">Checking deployed version…</div>
       </div>
 
       <!-- CREATE TABLE — tournament table setup form -->
@@ -4291,6 +4293,7 @@ async function submitAdminPass(){
     adminPassword=val;
     closeAdminPass();
     openAdminPanelView();
+    loadDeployVersion();
     return;
   }
   setAdminPassError(r.data.error||'Incorrect password');
@@ -4301,6 +4304,13 @@ async function submitAdminPass(){
 document.getElementById('admin-pass-input').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); submitAdminPass(); } });
 
 function openAdminPanelView(){ showAdminView('menu'); document.getElementById('admin-panel-overlay').classList.add('show'); }
+// Shows exactly which GitHub commit Render is running — the direct answer to "did my last upload go live?"
+// No password needed for this call: a commit hash is not a secret.
+async function loadDeployVersion(){
+  const el=document.getElementById('admin-deploy-version');
+  const r=await api('/api/version',{});
+  el.textContent=r.ok ? `Running commit ${r.data.commit}${r.data.branch?' · '+r.data.branch:''}` : 'Could not check the deployed version.';
+}
 function closeAdminPanelView(){ document.getElementById('admin-panel-overlay').classList.remove('show'); }
 
 // ── ADMIN PANEL sub-views: the menu list vs the Create Table form ──
