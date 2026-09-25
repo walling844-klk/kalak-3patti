@@ -94,7 +94,7 @@ class RealtimeServer {
       return;
     }
     const message = this.parse(data);
-    if (!message || typeof message.t !== 'string') {
+    if (!message || typeof message.t !== 'string' || message.t.length > 32 || Object.keys(message).length > 8) {
       this.send(client, { t: 'error', code: 'bad_message', error: 'Invalid message.' });
       return;
     }
@@ -127,7 +127,8 @@ class RealtimeServer {
       client.socket.close(CLOSE_NOT_ALLOWED, 'authentication rate limit');
       return;
     }
-    const password = typeof message.password === 'string' ? message.password : '';
+    const password = typeof message.password === 'string' && message.password.length <= 128 ? message.password : '';
+    if (typeof message.password !== 'string' || message.password.length > 128) { this.send(client, { t: 'denied', code: 'bad_auth', error: 'Invalid authentication payload.' }); return; }
     const sid = typeof message.sid === 'string' ? message.sid.trim() : '';
     if (!sid || sid.length > 128) {
       this.send(client, { t: 'denied', code: 'bad_sid', error: 'A valid session id is required.' });
