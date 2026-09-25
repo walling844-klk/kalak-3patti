@@ -1,27 +1,24 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { MatchManager } = require('./match-manager');
+const { MatchManager, scheduledStartMs } = require('./match-manager');
 
 const config = {
   numPlayers: 2, chipsPerPlayer: 100, startingBoot: 10, startingBlind: 10,
-  bootIncreaseMinutes: 5,
+  bootIncreaseMinutes: 5, matchStartDate: '', matchStartTime: '',
   players: [
     { seat: 1, name: 'Alice', password: 'a', type: 'human', kicked: false },
     { seat: 2, name: 'Bob', password: 'b', type: 'human', kicked: false },
   ],
 };
 const sent = new Map();
-const realtime = {
-  clients: new Set(), sessions: new Map(),
-  send(client, message) { if (!sent.has(client)) sent.set(client, []); sent.get(client).push(message); },
-};
+const realtime = { clients: new Set(), sessions: new Map(), send(client, message) { if (!sent.has(client)) sent.set(client, []); sent.get(client).push(message); } };
 const clients = [
   { authenticated: true, role: 'player', seat: 1, name: 'Alice' },
   { authenticated: true, role: 'player', seat: 2, name: 'Bob' },
 ];
 let snapshot = null;
-let savedConfig = config;
+let savedConfig = { ...config };
 const manager = new MatchManager({
   getConfig: () => savedConfig,
   saveConfig: cfg => { savedConfig = cfg; },
@@ -32,6 +29,9 @@ const manager = new MatchManager({
 });
 
 (async () => {
+  assert.ok(scheduledStartMs({ matchStartDate: '2099-01-01', matchStartTime: '12:00' }) > Date.now());
+  assert.ok(scheduledStartMs({ matchStartDate: '2000-01-01', matchStartTime: '12:00' }) < Date.now());
+
   manager.register(clients[0]);
   assert.equal(manager.started, false);
   manager.register(clients[1]);
@@ -42,8 +42,8 @@ const manager = new MatchManager({
 
   const aliceState = manager.stateFor(clients[0]);
   const bobState = manager.stateFor(clients[1]);
-  assert.ok(aliceState.players[0].hand?.length === 3);
-  assert.ok(bobState.players[1].hand?.length === 3);
+  assert.equal(aliceState.players[0].hand?.length, 3);
+  assert.equal(bobState.players[1].hand?.length, 3);
   assert.equal(aliceState.players[1].hand, null);
   assert.equal(bobState.players[0].hand, null);
   assert.equal(JSON.stringify(aliceState).includes('password'), false);
@@ -52,16 +52,22 @@ const manager = new MatchManager({
   await manager.applyAction(current, manager.engine.actionsFor(current - 1).blind ? 'blind' : 'see');
   assert.ok(snapshot, 'action must remain persisted');
 
-  const restored = new MatchManager({
-    getConfig: () => savedConfig,
-    saveConfig: cfg => { savedConfig = cfg; },
-    loadSnapshot: () => snapshot,
-    saveSnapshot: value => { snapshot = value; },
-    deleteSnapshot: () => { snapshot = null; },
-    realtime,
-  });
+  const restored = new MatchManager({ getConfig: () => savedConfig, saveConfig: cfg => { savedConfig = cfg; }, loadSnapshot: () => snapshot, saveSnapshot: value => { snapshot = value; }, deleteSnapshot: () => { snapshot = null; }, realtime });
   assert.equal(await restored.restoreIfPresent(), true);
   assert.deepEqual(restored.engine.state(), manager.engine.state());
   manager.close(); restored.close();
-  console.log('Match manager tests passed: start, persistence, privacy, actions, and restore.');
+
+  let botConfig = { ...config, players: [
+    { seat: 1, name: 'Human', password: 'h', type: 'human', kicked: false },
+    { seat: 2, name: 'Computer', password: 'c', type: 'computer', kicked: false },
+  ] };
+  let botSnapshot = null;
+  const botManager = new MatchManager({ getConfig: () => botConfig, saveConfig: cfg => { botConfig = cfg; }, loadSnapshot: () => botSnapshot, saveSnapshot: value => { botSnapshot = value; }, deleteSnapshot: () => { botSnapshot = null; }, realtime });
+  botManager.register({ authenticated: true, role: 'player', seat: 1, name: 'Human' });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(botManager.started, true, 'one human plus one computer starts when the schedule is open');
+  assert.deepEqual([...botManager.computerSeats], [1]);
+  botManager.close();
+
+  console.log('Phase 4 lifecycle tests passed: schedule gate, computer seats, persistence, privacy, and restore.');
 })().catch(error => { console.error(error); process.exitCode = 1; });
