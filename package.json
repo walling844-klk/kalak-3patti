@@ -5,9 +5,11 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test:engine": "node test-game-engine.js"
+    "test:engine": "node test-game-engine.js",
+    "test:realtime": "node test-realtime.js"
   },
   "dependencies": {
-    "express": "^4.19.2"
+    "express": "^4.19.2",
+    "ws": "^8.21.3"
   }
 }
