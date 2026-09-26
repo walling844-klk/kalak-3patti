@@ -2,6 +2,7 @@
 
 const assert = require('node:assert/strict');
 const { MatchManager, scheduledStartMs } = require('./match-manager');
+const { TeenPattiEngine } = require('./game-engine');
 
 const config = {
   numPlayers: 2, chipsPerPlayer: 100, startingBoot: 10, startingBlind: 10,
@@ -31,6 +32,14 @@ const manager = new MatchManager({
 (async () => {
   assert.ok(scheduledStartMs({ matchStartDate: '2099-01-01', matchStartTime: '12:00' }) > Date.now());
   assert.ok(scheduledStartMs({ matchStartDate: '2000-01-01', matchStartTime: '12:00' }) < Date.now());
+
+  const configuredEngine = new TeenPattiEngine({ seats: 2, chips: [100, 100], startingBoot: 10, startingBlind: 30, maxBlindCall: 40, random: () => 0.1 });
+  configuredEngine.startRound();
+  assert.equal(configuredEngine.currentBet, 30, 'starting blind must control the initial call');
+  assert.equal(configuredEngine.actionsFor(configuredEngine.currentSeat).raise, true);
+  configuredEngine.action(configuredEngine.currentSeat, 'raise');
+  assert.equal(configuredEngine.currentBet, 40, 'max blind/call must cap raises');
+  assert.equal(configuredEngine.actionsFor(configuredEngine.currentSeat).raise, false);
 
   const futureConfig = { ...config, matchStartDate: '2099-01-01', matchStartTime: '12:00' };
   let futureSaved = { ...futureConfig };
@@ -69,6 +78,10 @@ const manager = new MatchManager({
 
   const aliceState = manager.stateFor(clients[0]);
   const bobState = manager.stateFor(clients[1]);
+  assert.equal(aliceState.players[0].name, 'Alice');
+  assert.equal(aliceState.players[1].name, 'Bob');
+  assert.equal(bobState.players[0].name, 'Alice');
+  assert.equal(bobState.players[1].name, 'Bob');
   assert.equal(aliceState.players[0].hand?.length, 3);
   assert.equal(bobState.players[1].hand?.length, 3);
   assert.equal(aliceState.players[1].hand, null);
