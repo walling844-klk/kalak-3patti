@@ -2106,6 +2106,7 @@ body{
               </div>
             </div>
             <button id="btn-ct-start-save" type="button" onclick="updateStartTime()">UPDATE START</button>
+            <button id="btn-ct-start-now" type="button" onclick="startMatchNow()">START MATCH NOW</button>
             <div id="ct-start-msg"></div>
           </div>
           <div id="ct-kick-section">
@@ -3281,7 +3282,7 @@ function render(){
     // cards
     const cd=document.getElementById('cards-'+i);
     if(cd){
-      if(G.roundOver&&G.showdown&&!p.folded&&i!==LOCAL_SEAT){
+      if((G.roundOver&&G.showdown||G.revealSeats?.includes(i))&&i!==LOCAL_SEAT&&(G.revealSeats?.includes(i)||!p.folded)){
         cd.innerHTML=p.hand.map(c=>{
           const red=RED_S.includes(c.s);
           return`<div class="card-mini-face ${red?'red':'black'}">${rankStr(c.r)}<br>${SUITS_SYM[c.s]}</div>`;
@@ -4502,7 +4503,10 @@ function refreshCreateTableState(){
   document.getElementById('ct-online').style.display=online?'block':'none';
   cancelKillTable();                               // never leave the confirmation open from an earlier visit
   ctKickConfirmSeat=null;
-  if(online){ renderKickList(); updateOnlineInfo(); loadStartEditor(); }
+  if(online){ renderKickList(); updateOnlineInfo(); loadStartEditor();
+    const startNow=document.getElementById('btn-ct-start-now');
+    if(startNow) startNow.style.display=cfg.status==='live'||cfg.result?'none':'';
+  }
 }
 function ctStartText(cfg){                         // "25/09/2026, 7:30 PM IST" (or just the part that is set)
   return [ctIsoToDmy(cfg.matchStartDate),cfg.matchStartTime?formatMatchTime(cfg.matchStartTime)+' IST':''].filter(Boolean).join(', ');
@@ -4552,6 +4556,21 @@ async function updateStartTime(){
   const when=ctStartText(TOURNAMENT_CONFIG);
   show(when?`✓ Match start updated to ${when}`:'✓ Match start cleared',false);
 }
+async function startMatchNow(){
+  const btn=document.getElementById('btn-ct-start-now');
+  if(btn) btn.disabled=true;
+  const r=await api('/api/admin/table/start-now',{adminPassword});
+  if(btn) btn.disabled=false;
+  const msgEl=document.getElementById('ct-start-msg');
+  if(!r.ok){
+    if(msgEl){ msgEl.textContent='✗ '+(r.data.error||'Could not start the match.'); msgEl.classList.add('show','error'); }
+    return;
+  }
+  TOURNAMENT_CONFIG=r.data.config;
+  refreshCreateTableState();
+  if(msgEl){ msgEl.textContent='✓ Match started.'; msgEl.classList.add('show'); }
+}
+
 // ── KICK PLAYER — admin removes a player's seat (needs a confirm tap, so a mis-touch can't kick anyone) ──
 // For now this only marks the seat on the server: the kicked player's password stops working for Join Tournament.
 // When the live match is wired in, this is the spot that also drops their live connection.
@@ -4776,8 +4795,33 @@ function matchSessionId(){
 }
 function closeMatchSocket(){ if(matchReconnectTimer){ clearTimeout(matchReconnectTimer); matchReconnectTimer=null; } if(matchSocket){ matchSocket.onclose=null; matchSocket.close(); matchSocket=null; } }
 function updateLiveWait(text){ const box=document.getElementById('join-wait'); if(box) box.innerHTML=`<div class="join-waiting-note">${text}</div>`; }
+function applyServerRevealEvent(m){
+  if(!Array.isArray(m.hands)) return;
+  const revealed=[];
+  for(const item of m.hands){
+    const index=Number(item.seat)-1;
+    if(!Number.isInteger(index)||!Array.isArray(item.hand)||!G.players[index]) continue;
+    G.players[index].hand=item.hand;
+    G.players[index].seen=true;
+    revealed.push(index);
+  }
+  G.revealSeats=revealed;
+  if(m.t==='showdownReveal'){
+    G.showdown=true;
+    G.roundOver=true;
+    G.lastWinnerIdx=Number(m.winner)-1;
+    msg(`SHOW: ${seatName(G.lastWinnerIdx)} wins ₹${Number(m.amount||0).toLocaleString()}. Both hands are revealed.`);
+  }else{
+    msg(`SIDESHOW: ${seatName(Number(m.winner)-1)} wins the compare — ${seatName(Number(m.loser)-1)} folds.`);
+  }
+  render();
+  clearTimeout(G.serverRevealTimer);
+  G.serverRevealTimer=setTimeout(()=>{ G.revealSeats=[]; if(!G.showdown) render(); },5000);
+}
 function handleMatchMessage(m){
-  if(m.t==='lobby'){
+  if(m.t==='showdownReveal'||m.t==='sideshowReveal'){
+    applyServerRevealEvent(m);
+  }else if(m.t==='lobby'){
     joinTableInfo=m.tableInfo||joinTableInfo; tickJoinCountdown();
     if(m.ended){ closeJoinSeated(); showMatchEnded({winner:m.winner}); }
   }else if(m.t==='matchState'){
@@ -4829,6 +4873,8 @@ function applyServerMatchState(state){
   G.gameOver=!!state.gameOver;
   G.kingIdx=Number.isInteger(state.king)?state.king:null;
   G.showdown=false;
+  G.revealSeats=[];
+  clearTimeout(G.serverRevealTimer);
   G.collectingBoot=false;
   G.sideshow=state.pendingSideshow?{reqIdx:state.pendingSideshow.asker-1,tgtIdx:state.pendingSideshow.target-1,phase:'ask'}:null;
   const ssReq=state.pendingSideshow;
