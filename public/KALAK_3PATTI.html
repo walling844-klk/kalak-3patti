@@ -4910,7 +4910,6 @@ function applyServerMatchState(state){
 }
 function startServerMatchUI(state){
   G.tournamentMatch=true;
-  if(matchWatchdog){ clearInterval(matchWatchdog); matchWatchdog=null; }
   const players=state.players||[];
   if(joinSeat!=null) LOCAL_SEAT=Math.max(0,Math.min(NUM_SEATS-1,joinSeat-1));
   NAMES=NAMES.map((name,index)=>players[index]?.name||name);
@@ -4943,7 +4942,7 @@ function startJoinCountdown(){
   joinCountdownTimer=setInterval(tickJoinCountdown,1000);
   connectMatchSocket();
   matchWatchdog=setInterval(()=>{
-    if(!joinPassword||G.tournamentMatch){ clearInterval(matchWatchdog); matchWatchdog=null; return; }
+    if(!joinPassword){ clearInterval(matchWatchdog); matchWatchdog=null; return; }
     if(!matchSocket||matchSocket.readyState===WebSocket.CLOSED||matchSocket.readyState===WebSocket.CLOSING){ connectMatchSocket(); return; }
     if(matchSocket.readyState===WebSocket.OPEN){
       if(Date.now()-matchLastPong>15000){ matchSocket.close(); return; }
@@ -4956,6 +4955,9 @@ function stopJoinCountdown(){
   if(matchWatchdog){ clearInterval(matchWatchdog); matchWatchdog=null; }
   closeMatchSocket();
 }
+document.addEventListener('visibilitychange',()=>{
+  if(!document.hidden&&joinPassword&&(!matchSocket||matchSocket.readyState!==WebSocket.OPEN)) connectMatchSocket();
+});
 function leaveJoinSeated(){ closeJoinSeated(); }   // just dismisses the holding screen — no live seat to release yet
 
 function formatMatchTime(hhmmss){                  // "19:30" / "19:30:00" -> "7:30 PM"
