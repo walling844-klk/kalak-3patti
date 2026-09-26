@@ -4811,6 +4811,13 @@ function applyServerRevealEvent(m){
     G.roundOver=true;
     G.lastWinnerIdx=Number(m.winner)-1;
     msg(`SHOW: ${seatName(G.lastWinnerIdx)} wins ₹${Number(m.amount||0).toLocaleString()}. Both hands are revealed.`);
+    const winner=m.hands.find(item=>Number(item.seat)===Number(m.winner));
+    const losers=m.hands.filter(item=>Number(item.seat)!==Number(m.winner));
+    document.getElementById('w-name').textContent=G.lastWinnerIdx===LOCAL_SEAT?`YOU WIN ₹${Number(m.amount||0)}!`:`${seatName(G.lastWinnerIdx)} WINS ₹${Number(m.amount||0)}!`;
+    document.getElementById('w-hand-label').textContent=winner?.score?.lab||'';
+    document.getElementById('winner-cards').innerHTML=winner?ssCardsHTML(winner.hand):'';
+    document.getElementById('loser-list').innerHTML=losers.map(item=>`<div class="loser-row"><div class="l-name">${Number(item.seat)-1===LOCAL_SEAT?'YOUR HAND':seatName(Number(item.seat)-1).toUpperCase()+"'S HAND"}</div><div class="w-hand">${item.score?.lab||''}</div><div class="loser-cards">${ssCardsHTML(item.hand)}</div></div>`).join('');
+    document.getElementById('winner-overlay').classList.add('show');
   }else{
     msg(`SIDESHOW: ${seatName(Number(m.winner)-1)} wins the compare — ${seatName(Number(m.loser)-1)} folds.`);
   }
@@ -4819,7 +4826,11 @@ function applyServerRevealEvent(m){
   G.serverRevealTimer=setTimeout(()=>{ G.revealSeats=[]; if(!G.showdown) render(); },5000);
 }
 function handleMatchMessage(m){
-  if(m.t==='showdownReveal'||m.t==='sideshowReveal'){
+  if(m.t==='chipShare'){
+    const who=seatName(Number(m.seat)-1);
+    const each=Number(m.each||0), remainder=Number(m.remainder||0);
+    msg(`${who} was removed. ${each>0?`₹${each.toLocaleString()} shared to each eligible player`:''}${remainder>0?` · ₹${remainder.toLocaleString()} carried to the next pot`:''}`);
+  }else if(m.t==='showdownReveal'||m.t==='sideshowReveal'){
     applyServerRevealEvent(m);
   }else if(m.t==='lobby'){
     joinTableInfo=m.tableInfo||joinTableInfo; tickJoinCountdown();
@@ -4828,6 +4839,7 @@ function handleMatchMessage(m){
     matchState=m;
     if(!G.tournamentMatch) startServerMatchUI(m);
     else applyServerMatchState(m);
+    if(m.roundOver===false) document.getElementById('winner-overlay')?.classList.remove('show');
     updateLiveWait(m.status==='live'?'Match is live — game state connected.':'Match state received.');
     if(m.gameOver) showMatchEnded({winner:m.players.find(p=>p.seat===m.king+1)?.name||'the winner'});
   }else if(m.t==='denied'){
