@@ -4030,6 +4030,35 @@ function paintTurnRing(){
   if(wrap) wrap.classList.toggle('low',G.timerLeft<=7);
 }
 
+// Server-owned matches use the server deadline as the source of truth on every device.
+// The client paints the remaining seconds only; the server remains responsible for timing out a seat.
+function stopServerTurnCountdown(){
+  if(serverTurnTicker){ clearInterval(serverTurnTicker); serverTurnTicker=null; }
+  serverTurnDeadline=null;
+  G.timerLeft=0;
+}
+function syncServerTurnCountdown(remainingMs){
+  if(serverTurnTicker){ clearInterval(serverTurnTicker); serverTurnTicker=null; }
+  const remaining=Number(remainingMs);
+  if(!Number.isFinite(remaining)||remaining<=0||G.currentIdx<0||G.roundOver||G.gameOver){
+    serverTurnDeadline=null;
+    G.timerLeft=0;
+    return;
+  }
+  // Translate the server's remaining duration into this device's monotonic wall clock once per state update.
+  serverTurnDeadline=Date.now()+Math.min(TURN_SECS*1000,remaining);
+  const paint=()=>{
+    const remaining=Math.max(0,Math.ceil((serverTurnDeadline-Date.now())/1000));
+    G.timerLeft=Math.min(TURN_SECS,remaining);
+    const td=document.getElementById('timer-'+G.currentIdx);
+    if(td) td.textContent=G.timerLeft;
+    if(G.currentIdx===LOCAL_SEAT) paintTurnRing();
+    if(remaining<=0){ clearInterval(serverTurnTicker); serverTurnTicker=null; }
+  };
+  paint();
+  serverTurnTicker=setInterval(paint,250);
+}
+
 // One countdown for whoever's turn it is. Your seat shows it in the ring HUD, everyone else on their avatar.
 // If time runs out, that seat is packed — the same rule for you and for every other seat.
 function startTurnTimer(){
@@ -4695,6 +4724,7 @@ async function killTable(){                        // step 2: only reachable fro
 // holds the password list, so there's nothing here for anyone to read out of the page source.
 let joinPassword=null;                             // the joiner's OWN password, kept in memory only for WebSocket authentication
 let joinSeat=null, joinRole=null, matchSocket=null, matchReconnectTimer=null, matchState=null, serverActions=null;
+let serverTurnTicker=null, serverTurnDeadline=null;
 let joinTableInfo=null;                            // table settings the server sent for the waiting screen (start date/time etc.)
 function openJoinTournament(){
   document.getElementById('join-pass-input').value='';
@@ -4754,7 +4784,7 @@ function showJoinSeated(result){
   document.getElementById('join-seated-overlay').classList.add('show');
   startJoinCountdown();
 }
-function closeJoinSeated(){ stopJoinCountdown(); closeMatchSocket(); joinPassword=null; joinSeat=null; joinRole=null; matchState=null; joinTableInfo=null; document.getElementById('join-seated-overlay').classList.remove('show'); }
+function closeJoinSeated(){ stopJoinCountdown(); closeMatchSocket(); stopServerTurnCountdown(); joinPassword=null; joinSeat=null; joinRole=null; matchState=null; joinTableInfo=null; document.getElementById('join-seated-overlay').classList.remove('show'); }
 
 // ── "Waiting for the match to start in 01:23:45" — live countdown on the seated / observing screen ──
 // Counts to the admin's start date/time (entered in IST = UTC+5:30). Date only → that day at 00:00; time only → today at that time.
@@ -4911,6 +4941,7 @@ function applyServerMatchState(state){
   G.handId=state.round||G.handId;
   serverActions=state.players[LOCAL_SEAT]?.actions||null;
   clearInterval(G.timerInt); G.timerInt=null; G.timerOn=false;
+  syncServerTurnCountdown(state.turnRemainingMs);
   render();
 }
 function startServerMatchUI(state){

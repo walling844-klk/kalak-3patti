@@ -75,9 +75,17 @@ const manager = new MatchManager({
   assert.equal(manager.started, true);
   assert.equal(savedConfig.status, 'live');
   assert.ok(snapshot, 'live match must be persisted');
+  assert.ok(manager.turnDeadline > Date.now() && manager.turnDeadline <= Date.now() + 30_000,
+    'live human turn must have a server deadline within the 30-second timeout');
 
   const aliceState = manager.stateFor(clients[0]);
   const bobState = manager.stateFor(clients[1]);
+  assert.equal(aliceState.turnDeadline, manager.turnDeadline, 'player 1 must receive the live turn deadline');
+  assert.equal(bobState.turnDeadline, manager.turnDeadline, 'player 2 must receive the same live turn deadline');
+  assert.ok(aliceState.turnRemainingMs > 0 && aliceState.turnRemainingMs <= 30_000,
+    'clients must receive server-computed remaining milliseconds');
+  assert.ok(Math.abs(aliceState.turnRemainingMs - bobState.turnRemainingMs) < 100,
+    'clients should receive nearly identical remaining time');
   assert.equal(aliceState.players[0].name, 'Alice');
   assert.equal(aliceState.players[1].name, 'Bob');
   assert.equal(bobState.players[0].name, 'Alice');
@@ -89,6 +97,8 @@ const manager = new MatchManager({
   manager.engine.players[1].seen = true;
   manager.engine.currentSeat = 0;
   await manager.applyAction(1, 'show');
+  assert.equal(manager.turnDeadline, null, 'round-over state must clear the human turn deadline');
+  assert.equal(manager.stateFor(clients[0]).turnRemainingMs, null, 'round-over clients must not receive a stale timer');
   assert.equal(revealEvents.filter(item => item.message.t === 'showdownReveal').length, 2, 'SHOW reveal must be public');
   assert.equal(aliceState.players[0].hand?.length, 3);
   assert.equal(bobState.players[1].hand?.length, 3);

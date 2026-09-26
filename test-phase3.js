@@ -11,6 +11,7 @@ fs.writeFileSync('/tmp/kalak-phase3-browser-check.js', script);
 for (const marker of [
   'function startServerMatchUI',
   'function applyServerMatchState',
+  'function syncServerTurnCountdown',
   'function serverSend',
   "serverSend({t:'action',action:type})",
   "serverSend({t:'sideshowResponse',accept:!!accept})",
@@ -29,4 +30,9 @@ assert.match(tickBody, /clearInterval\(joinCountdownTimer\)/,
 const stopBody = script.match(/function stopJoinCountdown\(\)\{([\s\S]*?)\n\}/)?.[1];
 assert.ok(stopBody && /closeMatchSocket\(\)/.test(stopBody),
   'explicit leave/cleanup must continue to close the WebSocket');
-console.log('Phase 3 browser integration tests passed: server state adapter, action routing, reconnect path, polling removal, and lobby-to-live socket retention.');
+assert.match(script, /syncServerTurnCountdown\(state\.turnRemainingMs\)/,
+  'browser must sync its turn countdown from server-computed remaining time');
+const timerBody = script.match(/function syncServerTurnCountdown\(remainingMs\)\{([\s\S]*?)\n\}/)?.[1];
+assert.ok(timerBody && /Date\.now\(\)\+Math\.min\(TURN_SECS\*1000,remaining\)/.test(timerBody) && /setInterval\(paint,250\)/.test(timerBody),
+  'server turn countdown must repaint continuously on connected devices');
+console.log('Phase 3 browser integration tests passed: server state adapter, actions, reconnect, polling removal, lobby socket retention, and server-synchronized turn countdown.');

@@ -48,6 +48,7 @@ class MatchManager {
     this.restrictedBotSeats = new Set();
     this.absences = new Map();
     this.turnTimer = null;
+    this.turnDeadline = null;
     this.nextRoundTimer = null;
     this.botTimer = null;
     this.lifecycleTimer = setInterval(() => this.lifecycleTick().catch(error => console.error('Match lifecycle failed:', error.message)), LIFECYCLE_TICK_MS);
@@ -82,8 +83,8 @@ class MatchManager {
     this.started = true;
     this.restoring = false;
     await this.setStatus('live');
-    this.broadcastState();
     this.armTurnTimer();
+    this.broadcastState();
     this.maybeBotTurn();
     return true;
   }
@@ -243,8 +244,8 @@ class MatchManager {
     this.audit('match_started', { seats: config.numPlayers, computerSeats: [...this.computerSeats] });
     await this.persist();
     await this.setStatus('live');
-    this.broadcastState();
     this.armTurnTimer();
+    this.broadcastState();
     this.maybeBotTurn();
     return true;
   }
@@ -264,6 +265,8 @@ class MatchManager {
     return {
       t: 'matchState', status: this.engine.gameOver ? 'ended' : 'live', round: raw.round,
       dealer: raw.dealer, currentSeat: raw.currentSeat, lastWinner: raw.lastWinner,
+      turnDeadline: this.turnDeadline,
+      turnRemainingMs: this.turnDeadline == null ? null : Math.max(0, this.turnDeadline - Date.now()),
       currentBoot: raw.currentBoot, currentBet: raw.currentBet, pot: raw.pot,
       roundOver: raw.roundOver, gameOver: raw.gameOver, king: raw.king,
       pendingSideshow: raw.pendingSideshow ? { asker: raw.pendingSideshow.asker + 1, target: raw.pendingSideshow.target + 1 } : null,
@@ -335,8 +338,11 @@ class MatchManager {
 
   armTurnTimer() {
     clearTimeout(this.turnTimer);
+    this.turnTimer = null;
+    this.turnDeadline = null;
     if (!this.engine || this.engine.roundOver || this.engine.gameOver || this.engine.currentSeat < 0 || this.computerSeats.has(this.engine.currentSeat)) return;
     const seat = this.engine.currentSeat;
+    this.turnDeadline = Date.now() + TURN_TIMEOUT_MS;
     this.turnTimer = setTimeout(() => {
       if (!this.engine || this.engine.currentSeat !== seat || this.engine.roundOver) return;
       this.applyAction(seat + 1, 'timeout').catch(error => this.sendErrorToSeat(seat + 1, error.message));
@@ -376,7 +382,7 @@ class MatchManager {
         this.engine.startRound();
         if (this.carryPot > 0) { this.engine.pot += this.carryPot; this.carryPot = 0; }
         this.assertInvariants('next_round');
-        this.persist().then(() => { this.broadcastState(); this.armTurnTimer(); this.maybeBotTurn(); }).catch(() => {});
+        this.persist().then(() => { this.armTurnTimer(); this.broadcastState(); this.maybeBotTurn(); }).catch(() => {});
       } catch (_) { /* match may have ended between scheduling and execution */ }
     }, NEXT_ROUND_DELAY_MS);
   }
@@ -466,9 +472,9 @@ class MatchManager {
       }
       this.scheduleNextRound();
     }
-    this.broadcastState();
     this.broadcastEngineEvents(events);
     this.armTurnTimer();
+    this.broadcastState();
     this.maybeBotTurn();
   }
 
@@ -547,6 +553,7 @@ class MatchManager {
     this.absences.clear();
     this.carryPot = 0;
     this.turnTimer = null;
+    this.turnDeadline = null;
     this.nextRoundTimer = null;
     this.botTimer = null;
   }
