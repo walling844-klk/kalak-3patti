@@ -210,7 +210,10 @@ class MatchManager {
     }
     const names = Array.from({ length: config.numPlayers }, (_, i) => config.players[i]?.name || `Player${i + 1}`);
     const chips = Array.from({ length: config.numPlayers }, (_, i) => config.chipsPerPlayer ?? 5000);
-    this.engine = new TeenPattiEngine({ seats: config.numPlayers, names, chips, startingBoot: config.startingBoot, bootIncreaseMinutes: config.bootIncreaseMinutes });
+    const maxBlindCall = /^\d+$/.test(String(config.maxBlindCall || '').trim()) ? Number(config.maxBlindCall) : null;
+    this.engine = new TeenPattiEngine({ seats: config.numPlayers, names, chips,
+      startingBoot: config.startingBoot, startingBlind: config.startingBlind,
+      maxBlindCall, bootIncreaseMinutes: config.bootIncreaseMinutes });
     this.started = true;
     this.starting = false;
     this.engine.startRound();
@@ -465,10 +468,25 @@ class MatchManager {
   }
 
   close() {
+    this.reset();
     clearInterval(this.lifecycleTimer);
+  }
+
+  reset() {
     clearTimeout(this.turnTimer);
     clearTimeout(this.nextRoundTimer);
     clearTimeout(this.botTimer);
+    this.engine = null;
+    this.started = false;
+    this.starting = false;
+    this.restoring = false;
+    this.connectedSeats.clear();
+    this.computerSeats.clear();
+    this.restrictedBotSeats.clear();
+    this.absences.clear();
+    this.turnTimer = null;
+    this.nextRoundTimer = null;
+    this.botTimer = null;
   }
 }
 

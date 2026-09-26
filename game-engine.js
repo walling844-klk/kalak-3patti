@@ -16,6 +16,8 @@ const DEFAULTS = Object.freeze({
   seats: 8,
   startingChips: 5000,
   startingBoot: 10,
+  startingBlind: 20,
+  maxBlindCall: null,
   maxBoot: 640,
   bootIncreaseMinutes: 5,
 });
@@ -94,7 +96,7 @@ class TeenPattiEngine {
     this.dealer = options.dealer ?? Math.floor(this.random() * this.seats);
     this.currentBoot = this.options.startingBoot;
     this.pendingBoot = null;
-    this.currentBet = this.currentBoot * 2;
+    this.currentBet = this.cappedBet(this.options.startingBlind);
     this.pot = 0;
     this.deck = [];
     this.currentSeat = -1;
@@ -112,6 +114,11 @@ class TeenPattiEngine {
   activeSeats() { return this.players.filter(p => !p.folded && !p.standing); }
   seatsInGame() { return this.players.filter(p => !p.standing && p.chips >= this.currentBoot).map(p => p.seat); }
   moveCost(player) { return player.seen ? this.currentBet : Math.floor(this.currentBet / 2); }
+  cappedBet(value) {
+    const bet = Math.max(1, Math.floor(Number(value) || 1));
+    const cap = Number(this.options.maxBlindCall);
+    return Number.isFinite(cap) && cap > 0 ? Math.min(bet, Math.floor(cap)) : bet;
+  }
   scheduledBoot(elapsedMs) {
     const level = Math.floor(Math.max(0, elapsedMs) / (this.options.bootIncreaseMinutes * 60 * 1000));
     return Math.min(this.options.startingBoot * (2 ** level), this.options.maxBoot);
@@ -131,7 +138,7 @@ class TeenPattiEngine {
     }
     this.round += 1;
     this.pot = 0;
-    this.currentBet = this.currentBoot * 2;
+    this.currentBet = this.cappedBet(this.options.startingBlind ?? this.currentBoot * 2);
     this.roundOver = false;
     this.pendingSideshow = null;
     this.sideshowAskedSeat = -1;
@@ -171,14 +178,17 @@ class TeenPattiEngine {
 
   actionsFor(seat) {
     const player = this.players[seat];
-    const result = { pack: false, see: false, blind: false, chaal: false, raise: false, show: false, sideshow: false, sideshowTarget: -1 };
+    const result = { pack: false, see: false, blind: false, chaal: false, raise: false, show: false, sideshow: false, sideshowTarget: -1, raiseBet: 0, raisePay: 0 };
     if (!player || player.folded || this.roundOver || this.pendingSideshow) return result;
     result.see = !player.seen;
     if (seat !== this.currentSeat) return result;
     result.pack = true;
     result.blind = !player.seen;
     result.chaal = player.seen;
-    result.raise = player.chips >= (player.seen ? this.currentBet * 2 : this.currentBet);
+    const raisedBet = this.cappedBet(this.currentBet * 2);
+    result.raiseBet = raisedBet;
+    result.raisePay = player.seen ? raisedBet : Math.floor(raisedBet / 2);
+    result.raise = raisedBet > this.currentBet && player.chips >= (player.seen ? raisedBet : Math.floor(raisedBet / 2));
     const active = this.activeSeats();
     result.show = active.length === 2;
     result.sideshowTarget = this.sideshowTarget(seat);
@@ -227,7 +237,7 @@ class TeenPattiEngine {
       this.pay(seat, this.currentBet);
       this.advance();
     } else if (type === 'raise') {
-      this.currentBet *= 2;
+      this.currentBet = this.cappedBet(this.currentBet * 2);
       this.pay(seat, player.seen ? this.currentBet : Math.floor(this.currentBet / 2));
       this.advance();
     } else if (type === 'show') {

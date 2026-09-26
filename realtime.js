@@ -190,6 +190,8 @@ class RealtimeServer {
       chipsPerPlayer: config.chipsPerPlayer,
       startingBoot: config.startingBoot,
       startingBlind: config.startingBlind,
+      maxBlindCall: config.maxBlindCall,
+      bootIncreaseMinutes: config.bootIncreaseMinutes,
       matchStartDate: config.matchStartDate || '',
       matchStartTime: config.matchStartTime || '',
     };

@@ -217,6 +217,11 @@ function validDate(s) {                               // '' (not set) or a real 
 function validTime(s) { return s === '' || (typeof s === 'string' && TIME_RE.test(s) && +s.slice(0, 2) < 24 && +s.slice(3, 5) < 60); }
 const str = (v, max) => String(v == null ? '' : v).trim().slice(0, max);
 const int = (v, def, min, max) => { const n = parseInt(v, 10); return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : def; };
+function blindCap(v) {
+  const value = str(v, 20);
+  if (!value || /^unlimited$/i.test(value)) return 'Unlimited';
+  return /^\d+$/.test(value) && Number(value) > 0 ? String(Math.min(Number(value), 100000000)) : null;
+}
 
 // Turn whatever the client sent into a clean table config. `kicked` and `result` are owned by the server:
 // anything the client sends for them is ignored.
@@ -242,6 +247,8 @@ function sanitizeConfig(raw) {
   if (humanPws.includes(observerPassword)) return { error: 'The observer password matches a player password — make it different.' };
   if (!validDate(raw.matchStartDate == null ? '' : raw.matchStartDate)) return { error: 'Match start date must be a real date.' };
   if (!validTime(raw.matchStartTime == null ? '' : raw.matchStartTime)) return { error: 'Match start time is not valid.' };
+  const maxBlindCall = blindCap(raw.maxBlindCall);
+  if (maxBlindCall === null) return { error: 'Max Blind / Call must be Unlimited or a positive number.' };
   return {
     config: {
       numPlayers: n,
@@ -250,7 +257,7 @@ function sanitizeConfig(raw) {
       chipsPerPlayer: int(raw.chipsPerPlayer, 5000, 1, 100000000),
       startingBoot: int(raw.startingBoot, 10, 1, 100000000),
       startingBlind: int(raw.startingBlind, 10, 1, 100000000),
-      maxBlindCall: str(raw.maxBlindCall, 20) || 'Unlimited',
+      maxBlindCall,
       bootIncreaseMinutes: int(raw.bootIncreaseMinutes, 5, 1, 1440),
       matchStartDate: raw.matchStartDate || '',
       matchStartTime: raw.matchStartTime || ''
@@ -288,7 +295,7 @@ app.post('/api/admin/table', wrap(async (req, res) => {
 app.post('/api/admin/table/kill', wrap(async (req, res) => {
   if (!requireAdmin(req, res)) return;
   await commit(null);
-  if (matchManager) { matchManager.close(); await matchManager.deleteSnapshot(); }
+  if (matchManager) { matchManager.reset(); await matchManager.deleteSnapshot(); }
   if (realtime) realtime.broadcastLobby(null);
   res.json({ ok: true });
 }));
@@ -337,6 +344,8 @@ app.post('/api/join', (req, res) => {
     chipsPerPlayer: cfg.chipsPerPlayer,
     startingBoot: cfg.startingBoot,
     startingBlind: cfg.startingBlind,
+    maxBlindCall: cfg.maxBlindCall,
+    bootIncreaseMinutes: cfg.bootIncreaseMinutes,
     matchStartDate: cfg.matchStartDate || '',
     matchStartTime: cfg.matchStartTime || ''
   };
