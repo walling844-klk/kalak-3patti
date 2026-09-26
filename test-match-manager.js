@@ -82,20 +82,33 @@ const manager = new MatchManager({
   assert.equal(aliceState.players[1].name, 'Bob');
   assert.equal(bobState.players[0].name, 'Alice');
   assert.equal(bobState.players[1].name, 'Bob');
+  const revealEvents = [];
+  manager.realtime.clients = new Set(clients);
+  manager.realtime.send = (client, message) => { if (message.t === 'showdownReveal' || message.t === 'sideshowReveal') revealEvents.push({ client, message }); };
+  manager.engine.players[0].seen = true;
+  manager.engine.players[1].seen = true;
+  manager.engine.currentSeat = 0;
+  await manager.applyAction(1, 'show');
+  assert.equal(revealEvents.filter(item => item.message.t === 'showdownReveal').length, 2, 'SHOW reveal must be public');
   assert.equal(aliceState.players[0].hand?.length, 3);
   assert.equal(bobState.players[1].hand?.length, 3);
   assert.equal(aliceState.players[1].hand, null);
   assert.equal(bobState.players[0].hand, null);
   assert.equal(JSON.stringify(aliceState).includes('password'), false);
 
-  const current = manager.engine.currentSeat + 1;
-  await manager.applyAction(current, manager.engine.actionsFor(current - 1).blind ? 'blind' : 'see');
   assert.ok(snapshot, 'action must remain persisted');
 
   const restored = new MatchManager({ getConfig: () => savedConfig, saveConfig: cfg => { savedConfig = cfg; }, loadSnapshot: () => snapshot, saveSnapshot: value => { snapshot = value; }, deleteSnapshot: () => { snapshot = null; }, realtime });
   assert.equal(await restored.restoreIfPresent(), true);
   assert.deepEqual(restored.engine.state(), manager.engine.state());
   manager.close(); restored.close();
+
+  let manualConfig = { ...config, matchStartDate: '2099-01-01', matchStartTime: '12:00' };
+  const manualManager = new MatchManager({ getConfig: () => manualConfig, saveConfig: cfg => { manualConfig = cfg; }, loadSnapshot: () => null, saveSnapshot: () => {}, deleteSnapshot: () => {}, realtime });
+  manualManager.register(clients[0]);
+  manualManager.register(clients[1]);
+  assert.equal(await manualManager.startNow(), true, 'manual start must bypass a future schedule');
+  manualManager.close();
 
   let botConfig = { ...config, players: [
     { seat: 1, name: 'Human', password: 'h', type: 'human', kicked: false },

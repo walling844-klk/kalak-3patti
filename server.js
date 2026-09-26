@@ -331,6 +331,16 @@ app.post('/api/admin/table/start', wrap(async (req, res) => {
   res.json({ ok: true, config: TOURNAMENT_CONFIG });
 }));
 
+app.post('/api/admin/table/start-now', wrap(async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  if (!TOURNAMENT_CONFIG) return res.status(404).json({ error: 'No table is online.' });
+  if (!matchManager) return res.status(503).json({ error: 'Match manager is unavailable.' });
+  if (matchManager.started) return res.status(409).json({ error: 'The match has already started.' });
+  const started = await matchManager.startNow();
+  if (!started) return res.status(409).json({ error: 'The match could not start. Check that at least two configured seats are playable.' });
+  res.json({ ok: true, config: TOURNAMENT_CONFIG });
+}));
+
 // ── PLAYER: find a seat (or the observer slot) by password. Only ever returns THIS caller's own seat info plus
 // general table settings — never the seat list or anyone else's password. ──
 app.post('/api/join', (req, res) => {

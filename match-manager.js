@@ -193,8 +193,16 @@ class MatchManager {
   }
 
   async maybeStart() {
+    return this.startMatch(false);
+  }
+
+  async startNow() {
+    return this.startMatch(true);
+  }
+
+  async startMatch(force) {
     if (this.started || this.starting || this.restoring) return false;
-    if (!(await this.allRequiredPlayersReady()) || !(await this.startTimeReached())) return false;
+    if (!(await this.allRequiredPlayersReady()) || (!force && !(await this.startTimeReached()))) return false;
     this.starting = true;
     const config = await this.getConfig();
     if (!config) { this.starting = false; return false; }
@@ -408,6 +416,7 @@ class MatchManager {
   async afterAction() {
     clearTimeout(this.turnTimer);
     clearTimeout(this.botTimer);
+    const events = this.engine?.drainEvents?.() || [];
     await this.persist();
     if (this.engine.gameOver) {
       const winner = this.engine.players[this.engine.king];
@@ -431,8 +440,33 @@ class MatchManager {
       this.scheduleNextRound();
     }
     this.broadcastState();
+    this.broadcastEngineEvents(events);
     this.armTurnTimer();
     this.maybeBotTurn();
+  }
+
+  broadcastEngineEvents(events) {
+    if (!this.realtime || !this.engine) return;
+    for (const event of events || []) {
+      if (event.type === 'roundEnded' && event.showdown && Array.isArray(event.hands)) {
+        const message = {
+          t: 'showdownReveal', winner: event.winner + 1, amount: event.amount,
+          hands: event.hands.map(item => ({ seat: item.seat + 1, hand: item.hand, score: item.score }))
+        };
+        for (const client of this.realtime.clients) if (client.authenticated) this.realtime.send(client, message);
+      } else if (event.type === 'sideshowResolved') {
+        const seats = [event.asker, event.target];
+        const message = {
+          t: 'sideshowReveal', asker: event.asker + 1, target: event.target + 1,
+          winner: event.winner + 1, loser: event.loser + 1,
+          hands: seats.map(seat => ({ seat: seat + 1, hand: this.engine.players[seat].hand }))
+        };
+        for (const client of this.realtime.clients) {
+          if (!client.authenticated || client.role !== 'player' || !seats.includes(client.seat - 1)) continue;
+          this.realtime.send(client, message);
+        }
+      }
+    }
   }
 
   async adminKick(seat) {
