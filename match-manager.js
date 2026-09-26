@@ -38,6 +38,7 @@ class MatchManager {
     this.audit = audit;
     this.metrics = { actions: 0, timeouts: 0, botActions: 0, reconnects: 0, automaticKicks: 0, invariantFailures: 0 };
     this.totalChips = null;
+    this.carryPot = 0;
     this.engine = null;
     this.started = false;
     this.starting = false;
@@ -69,8 +70,13 @@ class MatchManager {
       return false;
     }
     this.engine = TeenPattiEngine.restore(snapshot);
-    this.totalChips = snapshot.totalChips ?? this.engine.players.reduce((sum, player) => sum + player.chips, 0) + this.engine.pot;
-    this.absences = new Map(Array.isArray(snapshot.absences) ? snapshot.absences.map(item => [item.seat, item]) : []);
+    this.carryPot = Number(snapshot.carryPot) || 0;
+    this.totalChips = snapshot.totalChips ?? this.engine.players.reduce((sum, player) => sum + player.chips, 0) + this.engine.pot + this.carryPot;
+    this.absences = new Map(Array.isArray(snapshot.absences) ? snapshot.absences.map(item => [item.seat, { ...item, connected: false }]) : []);
+    const restartNow = Date.now();
+    for (const seat of this.humanSeats(config)) {
+      if (!this.absences.has(seat)) this.absences.set(seat, { seat, disconnectedAt: restartNow, botEligibleAt: restartNow + DISCONNECT_GRACE_MS, deadline: null, missedRounds: 0, timeoutStreak: 0, timedOutThisRound: false, restricted: false, botControlled: false, connected: false });
+    }
     this.computerSeats = new Set((config.players || []).filter(p => p.type === 'computer' && !p.kicked).map(p => p.seat - 1));
     this.restrictedBotSeats = new Set((this.absences.size ? [...this.absences.values()] : []).filter(item => item.restricted).map(item => item.seat));
     this.started = true;
@@ -152,15 +158,19 @@ class MatchManager {
     if (!player || player.standing) { this.absences.delete(seat); return; }
     if (this.engine.currentSeat === seat && !this.engine.roundOver) this.engine.timeout(seat);
     const share = player.chips;
-    const recipients = this.engine.players.filter(p => p.seat !== seat && !p.standing && !p.folded);
+    const recipients = this.engine.players.filter(p => p.seat !== seat && !p.standing && !p.folded && p.chips >= this.engine.currentBoot);
+    let each = 0;
+    let remainder = share;
     if (share > 0 && recipients.length) {
-      const each = Math.floor(share / recipients.length);
-      const remainder = share - each * recipients.length;
+      each = Math.floor((share / recipients.length) / 10) * 10;
+      remainder = share - each * recipients.length;
       for (const recipient of recipients) recipient.chips += each;
-      this.engine.pot += remainder;
+      if (this.engine.roundOver) this.carryPot += remainder;
+      else this.engine.pot += remainder;
       player.chips = 0;
     } else if (share > 0) {
-      this.engine.pot += share;
+      if (this.engine.roundOver) this.carryPot += share;
+      else this.engine.pot += share;
       player.chips = 0;
     }
     player.standing = true;
@@ -168,7 +178,11 @@ class MatchManager {
     this.absences.delete(seat);
     this.computerSeats.delete(seat);
     this.metrics.automaticKicks += 1;
-    this.audit('automatic_kick', { seat: seat + 1, sharedChips: share });
+    this.audit('automatic_kick', { seat: seat + 1, sharedChips: share, recipients: recipients.map(p => p.seat + 1), shareEach: each, remainder });
+    if (this.realtime?.clients) {
+      const message = { t: 'chipShare', seat: seat + 1, amount: share, recipients: recipients.map(p => p.seat + 1), each, remainder };
+      for (const client of this.realtime.clients) if (client.authenticated) this.realtime.send(client, message);
+    }
     const config = await this.getConfig();
     if (config) {
       const next = { ...config, players: config.players.map(p => p.seat === seat + 1 ? { ...p, kicked: true } : p) };
@@ -280,6 +294,7 @@ class MatchManager {
     const snapshot = this.engine.snapshot();
     snapshot.totalChips = this.totalChips;
     snapshot.absences = [...this.absences.values()];
+    snapshot.carryPot = this.carryPot;
     this.persisting = this.persisting.then(() => this.saveSnapshot(snapshot));
     await this.persisting;
   }
@@ -289,7 +304,7 @@ class MatchManager {
     const players = this.engine.players;
     const cards = players.flatMap(player => player.hand || []);
     const uniqueCards = new Set(cards.map(card => `${card.r}:${card.s}`));
-    const chips = players.reduce((sum, player) => sum + player.chips, 0) + this.engine.pot;
+    const chips = players.reduce((sum, player) => sum + player.chips, 0) + this.engine.pot + this.carryPot;
     const valid = this.engine.pot >= 0 && players.every(player => Number.isSafeInteger(player.chips) && player.chips >= 0) && uniqueCards.size === cards.length && (this.totalChips == null || chips === this.totalChips);
     if (!valid) {
       this.metrics.invariantFailures += 1;
@@ -359,6 +374,7 @@ class MatchManager {
       if (!this.engine || !this.engine.roundOver || this.engine.gameOver) return;
       try {
         this.engine.startRound();
+        if (this.carryPot > 0) { this.engine.pot += this.carryPot; this.carryPot = 0; }
         this.assertInvariants('next_round');
         this.persist().then(() => { this.broadcastState(); this.armTurnTimer(); this.maybeBotTurn(); }).catch(() => {});
       } catch (_) { /* match may have ended between scheduling and execution */ }
@@ -380,7 +396,9 @@ class MatchManager {
     const absence = this.absences.get(index);
     if (type === 'timeout') {
       this.metrics.timeouts += 1;
-      if (absence) { absence.timedOutThisRound = true; absence.timeoutStreak = (absence.timeoutStreak || 0) + 1; }
+      const state = absence || this.ensureSeatAvailability(index);
+      state.timedOutThisRound = true;
+      state.timeoutStreak = (state.timeoutStreak || 0) + 1;
 
       if (this.engine.currentSeat !== index) throw new Error('It is not your turn.');
       this.engine.timeout(index);
@@ -390,6 +408,15 @@ class MatchManager {
     }
     this.assertInvariants('after_action');
     await this.afterAction();
+  }
+
+  ensureSeatAvailability(seat) {
+    let state = this.absences.get(seat);
+    if (!state) {
+      state = { seat, disconnectedAt: null, botEligibleAt: null, deadline: null, missedRounds: 0, timeoutStreak: 0, timedOutThisRound: false, restricted: false, botControlled: false, connected: true };
+      this.absences.set(seat, state);
+    }
+    return state;
   }
 
   async respondSideshow(seat, accept) {
@@ -518,6 +545,7 @@ class MatchManager {
     this.computerSeats.clear();
     this.restrictedBotSeats.clear();
     this.absences.clear();
+    this.carryPot = 0;
     this.turnTimer = null;
     this.nextRoundTimer = null;
     this.botTimer = null;

@@ -101,6 +101,8 @@ const manager = new MatchManager({
   const restored = new MatchManager({ getConfig: () => savedConfig, saveConfig: cfg => { savedConfig = cfg; }, loadSnapshot: () => snapshot, saveSnapshot: value => { snapshot = value; }, deleteSnapshot: () => { snapshot = null; }, realtime });
   assert.equal(await restored.restoreIfPresent(), true);
   assert.deepEqual(restored.engine.state(), manager.engine.state());
+  assert.equal(restored.absences.has(0), true, 'restart must track the first human seat as disconnected');
+  assert.equal(restored.absences.has(1), true, 'restart must track the second human seat as disconnected');
   manager.close(); restored.close();
 
   let manualConfig = { ...config, matchStartDate: '2099-01-01', matchStartTime: '12:00' };

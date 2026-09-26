@@ -90,6 +90,17 @@ function close(socket) { return new Promise(resolve => { if (socket.readyState =
   assert.equal((await observerAuthed).role, 'observer');
   await close(observer);
 
+  await close(refresh);
+  const locked = await open(url);
+  locked.send(JSON.stringify({ t: 'auth', password: 'alice-secret', sid: 'different-device' }));
+  const lockedDenied = await nextMessage(locked, m => m.t === 'denied');
+  assert.equal(lockedDenied.code, 'in_use', 'a different device cannot claim a seat during the reconnect lock');
+  await close(locked);
+  const sameReturning = await open(url);
+  const sameReturningAuthed = nextMessage(sameReturning, m => m.t === 'authed');
+  sameReturning.send(JSON.stringify({ t: 'auth', password: 'alice-secret', sid: 'device-a' }));
+  assert.equal((await sameReturningAuthed).seat, 1, 'the original session can reclaim its seat during the lock');
+
   const wrong = await open(url);
   for (let i = 0; i < 10; i += 1) wrong.send(JSON.stringify({ t: 'auth', password: `wrong-${i}`, sid: `wrong-${i}` }));
   const deniedMessages = [];
@@ -101,9 +112,9 @@ function close(socket) { return new Promise(resolve => { if (socket.readyState =
 
   config.players[0].kicked = true;
   realtime.broadcastLobby(config);
-  const kicked = await nextMessage(refresh, m => m.t === 'denied' && m.code === 'kicked');
+  const kicked = await nextMessage(sameReturning, m => m.t === 'denied' && m.code === 'kicked');
   assert.equal(kicked.code, 'kicked');
-  await close(refresh);
+  await close(sameReturning);
 
   realtime.close();
   await new Promise(resolve => httpServer.close(resolve));

@@ -6,6 +6,7 @@ const { WebSocketServer } = require('ws');
 const CLOSE_REPLACED = 4001;
 const CLOSE_IN_USE = 4003;
 const CLOSE_NOT_ALLOWED = 4008;
+const SEAT_LOCK_MS = 30_000;
 
 function safeEqual(a, b) {
   const left = Buffer.from(String(a));
@@ -24,6 +25,7 @@ class RealtimeServer {
     this.onAuthenticated = onAuthenticated || (() => {});
     this.onClose = onClose || (() => {});
     this.sessions = new Map();
+    this.sessionLocks = new Map();
     this.clients = new Set();
     this.wss = new WebSocketServer({ server, path: '/ws', maxPayload: 8192 });
     this.wss.on('connection', (socket, request) => this.handleConnection(socket, request));
@@ -162,6 +164,12 @@ class RealtimeServer {
     }
     if (role === 'player') {
       const previous = this.sessions.get(seat);
+      const lock = this.sessionLocks.get(seat);
+      if (!previous && lock && lock.expiresAt > Date.now() && lock.sid !== sid) {
+        this.send(client, { t: 'denied', code: 'in_use', error: 'This seat is temporarily locked to the previous device.' });
+        client.socket.close(CLOSE_IN_USE, 'seat temporarily locked');
+        return;
+      }
       if (previous && previous.socket !== client.socket) {
         if (previous.sid === sid) {
           this.send(previous, { t: 'denied', code: 'replaced', error: 'This session moved to another connection.' });
@@ -172,6 +180,7 @@ class RealtimeServer {
           return;
         }
       }
+      this.sessionLocks.delete(seat);
       this.sessions.set(seat, client);
     }
     client.authenticated = true;
@@ -247,7 +256,10 @@ class RealtimeServer {
   release(client) {
     this.clients.delete(client);
     this.onClose(client);
-    if (client.seat != null && this.sessions.get(client.seat) === client) this.sessions.delete(client.seat);
+    if (client.seat != null && this.sessions.get(client.seat) === client) {
+      this.sessions.delete(client.seat);
+      if (client.role === 'player' && client.sid) this.sessionLocks.set(client.seat, { sid: client.sid, expiresAt: Date.now() + SEAT_LOCK_MS });
+    }
   }
 
   close() {
