@@ -20,4 +20,13 @@ for (const marker of [
 assert.equal(html.includes('joinPollTimer'), false, 'waiting screen must not use the old polling timer');
 assert.equal(html.includes('pollJoinInfo'), false, 'waiting screen must not use the old polling function');
 assert.match(script, /G\.players= mapped|G\.players=mapped/, 'server state must populate the UI player model');
-console.log('Phase 3 browser integration tests passed: server state adapter, action routing, reconnect path, and polling removal.');
+const tickBody = script.match(/function tickJoinCountdown\(\)\{([\s\S]*?)\n\}/)?.[1];
+assert.ok(tickBody, 'lobby countdown tick function must exist');
+assert.doesNotMatch(tickBody, /stopJoinCountdown\(\)|closeMatchSocket\(\)/,
+  'hiding the lobby overlay after match start must not close the live gameplay socket');
+assert.match(tickBody, /clearInterval\(joinCountdownTimer\)/,
+  'hidden lobby should stop its display countdown timer');
+const stopBody = script.match(/function stopJoinCountdown\(\)\{([\s\S]*?)\n\}/)?.[1];
+assert.ok(stopBody && /closeMatchSocket\(\)/.test(stopBody),
+  'explicit leave/cleanup must continue to close the WebSocket');
+console.log('Phase 3 browser integration tests passed: server state adapter, action routing, reconnect path, polling removal, and lobby-to-live socket retention.');

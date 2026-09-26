@@ -4781,7 +4781,12 @@ function fmtCountdown(ms){
 function tickJoinCountdown(){
   const box=document.getElementById('join-wait');
   const ov=document.getElementById('join-seated-overlay');
-  if(!box||!ov||!ov.classList.contains('show')){ stopJoinCountdown(); return; }
+  // Live-play hides the lobby overlay but keeps this authenticated socket for actions.
+  // Stop only the display timer here; explicit leave/close flows own socket cleanup.
+  if(!box||!ov||!ov.classList.contains('show')){
+    if(joinCountdownTimer){ clearInterval(joinCountdownTimer); joinCountdownTimer=null; }
+    return;
+  }
   const start=joinStartMs(joinTableInfo);
   const left=start===null?0:start-Date.now();
   box.innerHTML=left>0
