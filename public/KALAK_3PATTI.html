@@ -3391,7 +3391,7 @@ function renderPotChips(){
 // and performAction() refuses anything it doesn't allow — so no seat can ever do something another seat can't.
 function availableActions(idx){
   if(G.tournamentMatch && idx===LOCAL_SEAT && serverActions){
-    const a={...serverActions, myTurn:G.currentIdx===idx, inHand:G.players.filter(x=>!x.folded).length, raiseBet:G.currentBet*2, raisePay:serverActions.raise?G.currentBet*2:0, sideshowTarget:serverActions.sideshowTarget, ssUsed:false, ssDenied:false, ssBroke:false};
+    const a={...serverActions, myTurn:G.currentIdx===idx, inHand:G.players.filter(x=>!x.folded).length, raiseBet:serverActions.raiseBet??G.currentBet*2, raisePay:serverActions.raisePay??(serverActions.raise?G.currentBet*2:0), sideshowTarget:serverActions.sideshowTarget, ssUsed:false, ssDenied:false, ssBroke:false};
     return a;
   }
   const p=G.players[idx];
@@ -4726,7 +4726,8 @@ function showJoinSeated(result){
   const rows=[
     `<div><b>Table:</b> ${info.numPlayers} seats</div>`,
     `<div><b>Chips:</b> ₹${info.chipsPerPlayer}</div>`,
-    `<div><b>Boot:</b> ₹${info.startingBoot} · <b>Blind:</b> ₹${info.startingBlind}</div>`
+    `<div><b>Boot:</b> ₹${info.startingBoot} · <b>Blind:</b> ₹${info.startingBlind}</div>`,
+    `<div><b>Max Blind/Call:</b> ${info.maxBlindCall||'Unlimited'} · <b>Boot Increase:</b> ${info.bootIncreaseMinutes||5} min</div>`
   ];
   if(info.matchStartDate||info.matchStartTime) rows.push(`<div><b>Starts:</b> ${ctStartText(info)}</div>`);
   rows.push('<div id="join-wait"></div>');                  // filled by the countdown below
