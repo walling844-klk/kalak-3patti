@@ -290,6 +290,7 @@ class MatchManager {
         loser: raw.pendingSideshow.loser == null ? null : raw.pendingSideshow.loser + 1,
       } : null,
       sideshowDeadline: this.sideshowDeadline,
+      sideshowRemainingMs: this.sideshowDeadline == null ? null : Math.max(0, this.sideshowDeadline - Date.now()),
       nextRoundDeadline: this.nextRoundDeadline,
       nextRoundRemainingMs: this.nextRoundDeadline == null ? null : Math.max(0, this.nextRoundDeadline - Date.now()),
       lastRoundResult: raw.lastRoundResult ? {

@@ -14,6 +14,7 @@ for (const marker of [
   'function syncServerTurnCountdown',
   'function showTournamentRoundResult',
   'function syncServerSideshow',
+  'function startAutoContinueMs',
   'function finishTournamentMatch',
   'function clearTournamentConnection',
   'function animateServerRoundStart(state)',
@@ -47,6 +48,12 @@ assert.match(script, /playServerStateFeedback\(state,previousState\)/,
   'server state transitions must trigger tournament chip, peek, fold, and result feedback');
 assert.match(script, /showTournamentRoundResult\(\{\.\.\.m\.lastRoundResult,remainingMs:m\.nextRoundRemainingMs\}\)/,
   'authoritative ordinary rounds and showdowns must display the local-style result popup');
+assert.match(script, /startAutoContinueMs\('round',\(\)=>\{\},countdownMs\)/,
+  'every tournament client must paint the hand-result countdown from server-computed remaining time');
+assert.match(script, /startAutoContinueMs\('ssreq',\(\)=>\{\},duration\)/,
+  'sideshow request and waiting overlays must use the server-computed remaining deadline');
+assert.match(script, /document\.addEventListener\('visibilitychange',\(\)=>Object\.values\(autoTimerTicks\)\.forEach\(tick=>tick\(\)\)\)/,
+  'countdowns must immediately repaint when a backgrounded mobile app or tab resumes');
 assert.match(script, /finishTournamentMatch\(m\.players\.find\(/,
   'game-over state must close live tournament networking before showing the final winner screen');
 assert.match(script, /if\(G\.tournamentMatch\)\{ clearTournamentConnection\(true\)/,

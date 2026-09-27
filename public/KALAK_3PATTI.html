@@ -3173,28 +3173,37 @@ const AUTO_UI={
   // the sideshow request: a short countdown with a draining bar, then the request lapses
   ssreq:{txt:'ssq-count',label:String(SIDESHOW_REQ_SECS),fmt:n=>String(n),bar:'ssq-bar-fill'}
 };
-const autoTimers={};
+const autoTimers={},autoTimerTicks={};
 
-function startAutoContinue(key,fn,secs=AUTO_CONTINUE_SECS){
+function startAutoContinueMs(key,fn,durationMs){
   stopAutoContinue(key);
-  const ui=AUTO_UI[key];
-  const el=document.getElementById(ui.txt);
-  let left=secs;
-  const paint=()=>{ if(el) el.textContent=ui.fmt(left); };
-  paint();
+  const ui=AUTO_UI[key],el=document.getElementById(ui.txt);
+  const duration=Math.max(0,Number(durationMs)||0),deadline=performance.now()+duration;
+  let shown=null,fired=false;
+  const finish=()=>{ if(fired)return; fired=true; stopAutoContinue(key); fn(); };
+  const tick=()=>{
+    if(fired)return;
+    const remain=Math.max(0,deadline-performance.now()),left=Math.ceil(remain/1000);
+    if(left<=0){ finish(); return; }
+    if(left!==shown){ shown=left; if(el) el.textContent=ui.fmt(left); }
+  };
+  if(duration<=0){ finish(); return; }
   if(ui.bar){
     const bar=document.getElementById(ui.bar);
-    if(bar){ bar.style.animation='none'; void bar.offsetWidth; bar.style.animation=`nrDrain ${secs}s linear forwards`; }
+    if(bar){ bar.style.animation='none'; void bar.offsetWidth; bar.style.animation=`nrDrain ${duration/1000}s linear forwards`; }
   }
-  autoTimers[key]=setInterval(()=>{
-    left--;
-    if(left<=0){ stopAutoContinue(key); fn(); }   // time's up → carry on
-    else paint();
-  },1000);
+  autoTimerTicks[key]=tick;
+  tick();
+  autoTimers[key]=setInterval(tick,200);
 }
+function startAutoContinue(key,fn,secs=AUTO_CONTINUE_SECS){
+  startAutoContinueMs(key,fn,(Number(secs)||0)*1000);
+}
+document.addEventListener('visibilitychange',()=>Object.values(autoTimerTicks).forEach(tick=>tick()));
 function stopAutoContinue(key){
   clearInterval(autoTimers[key]);
   autoTimers[key]=null;
+  delete autoTimerTicks[key];
   const ui=AUTO_UI[key];
   const el=document.getElementById(ui.txt);
   if(el) el.textContent=ui.label;
@@ -4932,7 +4941,8 @@ function applyServerRevealEvent(m){
       const res=document.getElementById('ss-result'); res.className=iWin?'win':'lose';
       res.textContent=iWin?`You win — ${seatName(Number(other.seat)-1)} folds`:`${seatName(Number(other.seat)-1)} wins — you fold`;
       document.getElementById('sideshow-overlay').classList.add('show');
-      startAutoContinue('ss',()=>{},AUTO_CONTINUE_SECS);
+      const revealMs=Number(matchState?.sideshowRemainingMs);
+      startAutoContinueMs('ss',()=>{},Number.isFinite(revealMs)&&revealMs>0?Math.min(AUTO_CONTINUE_SECS*1000,revealMs):AUTO_CONTINUE_SECS*1000);
     }
     msg(`SIDESHOW: ${seatName(winner)} wins the compare — ${seatName(Number(m.loser)-1)} folds.`);
   }
@@ -4982,8 +4992,8 @@ function showTournamentRoundResult(result){
   setTimeout(()=>{
     if(!G.tournamentMatch||G.round!==Number(result.round)||!G.roundOver) return;
     document.getElementById('winner-overlay').classList.add('show');
-    const secs=Number.isFinite(remaining)?Math.max(1,Math.ceil((remaining-wait)/1000)):AUTO_CONTINUE_SECS;
-    startAutoContinue('round',()=>{},Math.min(AUTO_CONTINUE_SECS,secs));
+    const countdownMs=Number.isFinite(remaining)?Math.max(1,Math.min(AUTO_CONTINUE_SECS*1000,remaining-wait)):AUTO_CONTINUE_SECS*1000;
+    startAutoContinueMs('round',()=>{},countdownMs);
   },wait);
 }
 function syncServerSideshow(state){
@@ -5010,8 +5020,10 @@ function syncServerSideshow(state){
   document.getElementById('ssq-sub').textContent=waiting?'If they deny, you carry on with a normal move.':`Both hands get compared and the lower one packs (on a tie, the one who asked packs). ${SIDESHOW_TIMEOUT_ACCEPTS?'No answer = accepted.':'No answer = denied.'}`;
   document.getElementById('ssq-timer-pre').textContent=waiting?'Request expires in':'Answer within';
   overlay.classList.add('show');
-  const deadline=Number(state.sideshowDeadline),remain=Number.isFinite(deadline)&&deadline>0?Math.max(1,Math.ceil((deadline-Date.now())/1000)):SIDESHOW_REQ_SECS;
-  startAutoContinue('ssreq',()=>{},remain);
+  const remainingMs=state.sideshowRemainingMs==null?NaN:Number(state.sideshowRemainingMs);
+  const deadline=Number(state.sideshowDeadline);
+  const duration=Number.isFinite(remainingMs)&&remainingMs>0?remainingMs:Number.isFinite(deadline)&&deadline>Date.now()?deadline-Date.now():SIDESHOW_REQ_SECS*1000;
+  startAutoContinueMs('ssreq',()=>{},duration);
 }
 function handleMatchMessage(m){
   if(m.t==='pong'){

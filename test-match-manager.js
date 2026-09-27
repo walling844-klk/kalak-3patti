@@ -156,7 +156,9 @@ const manager = new MatchManager({
   const originalTurnDeadline = sideManager.turnDeadline;
   await sideManager.applyAction(asker + 1, 'sideshow');
   assert.ok(sideManager.sideshowDeadline > Date.now() && sideManager.sideshowDeadline <= Date.now() + 15_000, 'server must own a 15-second sideshow response deadline');
-  assert.equal(sideManager.stateFor(sideClients[2]).pendingSideshow.phase, 'ask');
+  const sideshowState = sideManager.stateFor(sideClients[2]);
+  assert.equal(sideshowState.pendingSideshow.phase, 'ask');
+  assert.ok(sideshowState.sideshowRemainingMs > 0 && sideshowState.sideshowRemainingMs <= 15_000, 'each client state must carry server-computed remaining sideshow time');
   assert.equal(sideManager.turnDeadline, originalTurnDeadline, 'asking must not restart the current player’s turn clock');
   assert.equal(sideManager.stateFor(sideClients.find(c => c.seat === target + 1)).players[target].hand.length, 3);
   await sideManager.respondSideshow(target + 1, true);
