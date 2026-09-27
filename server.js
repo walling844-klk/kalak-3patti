@@ -326,7 +326,14 @@ app.post('/api/admin/table/start', wrap(async (req, res) => {
   const matchStartTime = b.matchStartTime == null ? '' : b.matchStartTime;
   if (!validDate(matchStartDate)) return res.status(400).json({ error: 'Match start date must be a real date.' });
   if (!validTime(matchStartTime)) return res.status(400).json({ error: 'Match start time is not valid.' });
-  await commit({ ...TOURNAMENT_CONFIG, matchStartDate, matchStartTime });
+  const matchEnded = TOURNAMENT_CONFIG.status === 'ended' || Boolean(TOURNAMENT_CONFIG.result);
+  const { result: _previousResult, status: _previousStatus, ...tableConfig } = TOURNAMENT_CONFIG;
+  const nextConfig = { ...tableConfig, matchStartDate, matchStartTime };
+  if (matchEnded && matchManager) {
+    matchManager.resetForNextMatch();
+    await matchManager.deleteSnapshot();
+  }
+  await commit(matchEnded ? nextConfig : { ...TOURNAMENT_CONFIG, matchStartDate, matchStartTime });
   if (realtime) realtime.broadcastLobby(TOURNAMENT_CONFIG);
   res.json({ ok: true, config: TOURNAMENT_CONFIG });
 }));

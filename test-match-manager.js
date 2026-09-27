@@ -125,6 +125,29 @@ const manager = new MatchManager({
   assert.equal(await manualManager.startNow(), true, 'manual start must bypass a future schedule');
   manualManager.close();
 
+  let restartConfig = { ...config };
+  const restartRealtime = { clients: new Set(), sessions: new Map(), send() {} };
+  const restartManager = new MatchManager({
+    getConfig: () => restartConfig,
+    saveConfig: value => { restartConfig = value; },
+    loadSnapshot: () => null,
+    saveSnapshot: () => {},
+    deleteSnapshot: () => {},
+    realtime: restartRealtime,
+  });
+  const restartClients = [
+    { authenticated: true, role: 'player', seat: 1, name: 'Alice' },
+    { authenticated: true, role: 'player', seat: 2, name: 'Bob' },
+  ];
+  for (const client of restartClients) { restartRealtime.clients.add(client); restartManager.register(client); }
+  await new Promise(resolve => setImmediate(resolve));
+  restartManager.engine.gameOver = true;
+  restartManager.resetForNextMatch();
+  assert.equal(restartManager.started, false, 'ended match reset must make the manager startable again');
+  assert.equal(restartManager.engine, null, 'ended match reset must discard the previous game engine');
+  assert.deepEqual([...restartManager.connectedSeats].sort(), [0, 1], 'connected players must remain eligible for the next match');
+  restartManager.close();
+
   let botConfig = { ...config, players: [
     { seat: 1, name: 'Human', password: 'h', type: 'human', kicked: false },
     { seat: 2, name: 'Computer', password: 'c', type: 'computer', kicked: false },

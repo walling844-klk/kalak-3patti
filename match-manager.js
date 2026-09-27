@@ -780,6 +780,13 @@ class MatchManager {
     clearInterval(this.lifecycleTimer);
   }
 
+  resetForNextMatch() {
+    const connectedPlayers = [...(this.realtime?.clients || [])]
+      .filter(client => client.authenticated && client.role === 'player' && client.seat != null);
+    this.reset();
+    for (const client of connectedPlayers) this.connectedSeats.add(client.seat - 1);
+  }
+
   reset() {
     clearTimeout(this.turnTimer);
     clearTimeout(this.nextRoundTimer);
