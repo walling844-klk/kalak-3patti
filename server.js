@@ -374,6 +374,7 @@ app.post('/api/join', (req, res) => {
     const seatMatch = (cfg.players || []).find(p => p.type === 'human' && safeEqual(p.password, password));
     if (seatMatch) {
       if (seatMatch.kicked) return res.status(403).json({ error: 'You have been removed from this table by the admin.', kicked: true });
+      if (matchManager?.isSeatExited(seatMatch.seat)) return res.status(403).json({ error: 'This player has exited the tournament and cannot rejoin this match.', exited: true });
       return res.json({ kind: 'seat', seat: seatMatch.seat, name: seatMatch.name, tableInfo, ...ended });
     }
     if (cfg.observerPassword && safeEqual(cfg.observerPassword, password)) return res.json({ kind: 'observer', tableInfo, ...ended });
@@ -393,6 +394,8 @@ realtime = new RealtimeServer({
   recordFailure: ip => recordFailure(ip),
   onAuthenticated: client => { if (matchManager) matchManager.register(client); },
   onClose: client => { if (matchManager) matchManager.unregister(client); },
+  onLeave: client => { if (matchManager) matchManager.markExited(client); },
+  isSeatExited: seat => matchManager?.isSeatExited(seat) || false,
   onMessage: (message, client) => matchManager ? matchManager.handleMessage(message, client) : false,
 });
 matchManager = new MatchManager({

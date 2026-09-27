@@ -15,7 +15,7 @@ function safeEqual(a, b) {
 }
 
 class RealtimeServer {
-  constructor({ server, getConfig, checkBlocked, recordFailure, allowedOrigins = [], onMessage, onAuthenticated, onClose } = {}) {
+  constructor({ server, getConfig, checkBlocked, recordFailure, allowedOrigins = [], onMessage, onAuthenticated, onClose, onLeave, isSeatExited } = {}) {
     if (!server || !getConfig) throw new Error('RealtimeServer requires an HTTP server and getConfig callback');
     this.getConfig = getConfig;
     this.checkBlocked = checkBlocked || (() => false);
@@ -24,6 +24,8 @@ class RealtimeServer {
     this.onMessage = onMessage || (() => false);
     this.onAuthenticated = onAuthenticated || (() => {});
     this.onClose = onClose || (() => {});
+    this.onLeave = onLeave || (() => {});
+    this.isSeatExited = isSeatExited || (() => false);
     this.sessions = new Map();
     this.sessionLocks = new Map();
     this.clients = new Set();
@@ -111,6 +113,7 @@ class RealtimeServer {
       return;
     }
     if (message.t === 'leave') {
+      this.onLeave(client);
       this.send(client, { t: 'left' });
       client.socket.close(1000, 'left');
       return;
@@ -163,6 +166,11 @@ class RealtimeServer {
       return;
     }
     if (role === 'player') {
+      if (this.isSeatExited(seat)) {
+        this.send(client, { t: 'denied', code: 'exited', error: 'This player has exited the tournament and cannot rejoin this match.' });
+        client.socket.close(CLOSE_NOT_ALLOWED, 'seat exited');
+        return;
+      }
       const previous = this.sessions.get(seat);
       const lock = this.sessionLocks.get(seat);
       if (!previous && lock && lock.expiresAt > Date.now() && lock.sid !== sid) {

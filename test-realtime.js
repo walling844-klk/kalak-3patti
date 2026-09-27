@@ -18,6 +18,7 @@ const config = {
   ],
   observerPassword: 'observer-secret',
 };
+const exitedSeats = new Set();
 
 function open(url, origin = 'http://localhost') {
   return new Promise((resolve, reject) => {
@@ -46,6 +47,8 @@ function close(socket) { return new Promise(resolve => { if (socket.readyState =
     getConfig: () => config,
     checkBlocked: () => false,
     recordFailure: () => {},
+    onLeave: client => exitedSeats.add(client.seat),
+    isSeatExited: seat => exitedSeats.has(seat),
   });
   await new Promise(resolve => httpServer.listen(0, '127.0.0.1', resolve));
   const port = httpServer.address().port;
@@ -100,6 +103,20 @@ function close(socket) { return new Promise(resolve => { if (socket.readyState =
   const sameReturningAuthed = nextMessage(sameReturning, m => m.t === 'authed');
   sameReturning.send(JSON.stringify({ t: 'auth', password: 'alice-secret', sid: 'device-a' }));
   assert.equal((await sameReturningAuthed).seat, 1, 'the original session can reclaim its seat during the lock');
+
+  const exitTarget = await open(url);
+  const exitTargetAuthed = nextMessage(exitTarget, m => m.t === 'authed');
+  exitTarget.send(JSON.stringify({ t: 'auth', password: 'bob-secret', sid: 'exit-device' }));
+  assert.equal((await exitTargetAuthed).seat, 2);
+  const leftNotice = nextMessage(exitTarget, m => m.t === 'left');
+  exitTarget.send(JSON.stringify({ t: 'leave' }));
+  assert.equal((await leftNotice).t, 'left', 'explicit exit must acknowledge the leaving player');
+  await close(exitTarget);
+  const exited = await open(url);
+  exited.send(JSON.stringify({ t: 'auth', password: 'bob-secret', sid: 'new-device-after-exit' }));
+  const exitedDenied = await nextMessage(exited, m => m.t === 'denied');
+  assert.equal(exitedDenied.code, 'exited', 'an explicitly exited seat must remain permanently locked for the match');
+  await close(exited);
 
   const wrong = await open(url);
   for (let i = 0; i < 10; i += 1) wrong.send(JSON.stringify({ t: 'auth', password: `wrong-${i}`, sid: `wrong-${i}` }));

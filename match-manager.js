@@ -47,6 +47,7 @@ class MatchManager {
     this.restoring = false;
     this.roundStartedAt = 0;
     this.connectedSeats = new Set();
+    this.exitedSeats = new Set();
     this.computerSeats = new Set();
     this.restrictedBotSeats = new Set();
     this.botPeekTimers = new Map();
@@ -84,6 +85,7 @@ class MatchManager {
     this.carryPot = Number(snapshot.carryPot) || 0;
     this.totalChips = snapshot.totalChips ?? this.engine.players.reduce((sum, player) => sum + player.chips, 0) + this.engine.pot + this.carryPot;
     this.absences = new Map(Array.isArray(snapshot.absences) ? snapshot.absences.map(item => [item.seat, { ...item, connected: false }]) : []);
+    this.exitedSeats = new Set(Array.isArray(snapshot.exitedSeats) ? snapshot.exitedSeats.map(Number).filter(Number.isInteger) : []);
     const restartNow = Date.now();
     for (const seat of this.humanSeats(config)) {
       if (!this.absences.has(seat)) this.absences.set(seat, { seat, disconnectedAt: restartNow, botEligibleAt: restartNow + DISCONNECT_GRACE_MS, deadline: null, missedRounds: 0, timeoutStreak: 0, timedOutThisRound: false, restricted: false, botControlled: false, connected: false });
@@ -111,6 +113,7 @@ class MatchManager {
   register(client) {
     if (client.role !== 'player' || client.seat == null) return;
     const seat = client.seat - 1;
+    if (this.exitedSeats.has(seat)) return;
     this.connectedSeats.add(seat);
     if (this.started) this.metrics.reconnects += this.absences.has(seat) ? 1 : 0;
     const absence = this.absences.get(seat);
@@ -143,6 +146,19 @@ class MatchManager {
       this.audit('player_absent', { seat: seat + 1, botEligibleAt: absence.botEligibleAt });
       this.broadcastState();
     }
+  }
+
+  markExited(client) {
+    if (client?.role !== 'player' || client.seat == null) return;
+    const seat = Number(client.seat) - 1;
+    this.exitedSeats.add(seat);
+    this.connectedSeats.delete(seat);
+    this.audit('player_exited', { seat: seat + 1 });
+    if (this.engine) this.persist().catch(error => console.error('Exit lock persistence failed:', error.message));
+  }
+
+  isSeatExited(seat) {
+    return this.exitedSeats.has(Number(seat) - 1);
   }
 
   async expireAbsences() {
@@ -344,6 +360,7 @@ class MatchManager {
     const snapshot = this.engine.snapshot();
     snapshot.totalChips = this.totalChips;
     snapshot.absences = [...this.absences.values()];
+    snapshot.exitedSeats = [...this.exitedSeats];
     snapshot.carryPot = this.carryPot;
     this.persisting = this.persisting.then(() => this.saveSnapshot(snapshot));
     await this.persisting;
@@ -798,6 +815,7 @@ class MatchManager {
     this.restoring = false;
     this.roundStartedAt = 0;
     this.connectedSeats.clear();
+    this.exitedSeats.clear();
     this.computerSeats.clear();
     this.restrictedBotSeats.clear();
     for (const timer of this.botPeekTimers.values()) clearTimeout(timer);
