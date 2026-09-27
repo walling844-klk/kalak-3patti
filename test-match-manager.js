@@ -74,7 +74,9 @@ const manager = new MatchManager({
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(manager.started, true);
   assert.equal(savedConfig.status, 'live');
+  assert.ok(manager.matchStartedAt > 0, 'live match must have an authoritative start timestamp');
   assert.ok(snapshot, 'live match must be persisted');
+  assert.equal(snapshot.matchStartedAt, manager.matchStartedAt, 'match start timestamp must be persisted');
   assert.ok(manager.turnDeadline > Date.now() && manager.turnDeadline <= Date.now() + 30_000,
     'live human turn must have a server deadline within the 30-second timeout');
 
@@ -113,6 +115,7 @@ const manager = new MatchManager({
 
   const restored = new MatchManager({ getConfig: () => savedConfig, saveConfig: cfg => { savedConfig = cfg; }, loadSnapshot: () => snapshot, saveSnapshot: value => { snapshot = value; }, deleteSnapshot: () => { snapshot = null; }, realtime });
   assert.equal(await restored.restoreIfPresent(), true);
+  assert.equal(restored.matchStartedAt, manager.matchStartedAt, 'restored match must retain its original start timestamp');
   assert.deepEqual(restored.engine.state(), manager.engine.state());
   assert.equal(restored.absences.has(0), true, 'restart must track the first human seat as disconnected');
   assert.equal(restored.absences.has(1), true, 'restart must track the second human seat as disconnected');

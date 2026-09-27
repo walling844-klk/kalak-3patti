@@ -42,6 +42,7 @@ class MatchManager {
     this.totalChips = null;
     this.carryPot = 0;
     this.engine = null;
+    this.matchStartedAt = 0;
     this.started = false;
     this.starting = false;
     this.restoring = false;
@@ -81,6 +82,7 @@ class MatchManager {
       return false;
     }
     this.engine = TeenPattiEngine.restore(snapshot);
+    this.matchStartedAt = Number(snapshot.matchStartedAt) || 0;
     this.roundStartedAt = 0;
     this.carryPot = Number(snapshot.carryPot) || 0;
     this.totalChips = snapshot.totalChips ?? this.engine.players.reduce((sum, player) => sum + player.chips, 0) + this.engine.pot + this.carryPot;
@@ -253,6 +255,7 @@ class MatchManager {
       startingBoot: config.startingBoot, startingBlind: config.startingBlind,
       maxBlindCall, bootIncreaseMinutes: config.bootIncreaseMinutes });
     this.started = true;
+    this.matchStartedAt = startNow;
     this.starting = false;
     this.engine.startRound();
     this.roundStartedAt = Date.now();
@@ -283,6 +286,7 @@ class MatchManager {
       dealer: raw.dealer, currentSeat: raw.currentSeat, lastWinner: raw.lastWinner,
       roundStartedAt: this.roundStartedAt,
       roundAgeMs: this.roundStartedAt ? Math.max(0, Date.now() - this.roundStartedAt) : null,
+      matchStartedAt: this.matchStartedAt || null,
       turnDeadline: this.turnDeadline,
       turnRemainingMs: this.turnDeadline == null ? null : Math.max(0, this.turnDeadline - Date.now()),
       currentBoot: raw.currentBoot, currentBet: raw.currentBet, pot: raw.pot,
@@ -347,6 +351,7 @@ class MatchManager {
     if (!this.engine) return;
     const snapshot = this.engine.snapshot();
     snapshot.totalChips = this.totalChips;
+    snapshot.matchStartedAt = this.matchStartedAt;
     snapshot.absences = [...this.absences.values()];
     snapshot.exitedSeats = [...this.exitedSeats];
     snapshot.carryPot = this.carryPot;
@@ -799,6 +804,7 @@ class MatchManager {
     clearTimeout(this.botTimer);
     clearTimeout(this.sideshowTimer);
     this.engine = null;
+    this.matchStartedAt = 0;
     this.started = false;
     this.starting = false;
     this.restoring = false;

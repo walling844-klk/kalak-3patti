@@ -2730,9 +2730,10 @@ function tickMatchClock(){
   if(G.gameOver){ stopMatchClock(); return; }   // match decided → freeze on the final time
   paintMatchClock();
 }
-function startMatchClock(){
-  if(G.matchStart) return;                      // already running (only the very first deal starts it)
-  G.matchStart=Date.now();
+function startMatchClock(startAt){
+  if(Number.isFinite(Number(startAt))&&Number(startAt)>0) G.matchStart=Number(startAt);
+  if(!G.matchStart) G.matchStart=Date.now();
+  if(G.matchTimerInt) return;                   // already running from the authoritative match start
   clearInterval(G.matchTimerInt);
   G.matchTimerInt=setInterval(tickMatchClock,250);
   paintMatchClock();
@@ -5123,6 +5124,12 @@ function applyServerMatchState(state,previousState=null){
   G.roundOver=!!state.roundOver;
   G.gameOver=!!state.gameOver;
   G.kingIdx=Number.isInteger(state.king)?state.king:null;
+  const matchStartedAt=Number(state.matchStartedAt);
+  if(Number.isFinite(matchStartedAt)&&matchStartedAt>0){
+    G.matchStart=matchStartedAt;
+    if(G.gameOver) stopMatchClock();
+    else startMatchClock(matchStartedAt);
+  }
   G.showdown=false;
   G.revealSeats=[];
   clearTimeout(G.serverRevealTimer);
