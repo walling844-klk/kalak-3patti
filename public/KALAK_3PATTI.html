@@ -2848,7 +2848,7 @@ function dealOrder(){
 // BOOT COLLECTION — each seat that's in the hand sends one chip (in its own colour) into the pot. Chips launch one after another,
 // clockwise from the dealer's left (the order the cards go out in), spread so the whole beat lasts BOOT_ANIM_MS however many are seated.
 const BOOT_FLIGHT_MS=1000, BOOT_SPREAD_MS=500, BOOT_ANIM_MS=1600;   // one chip's flight (= .boot-chip transition) · launches spread over this · total beat before the deal
-function animateCollectBoots(cb){
+function animateCollectBoots(cb,guard=()=>true){
   const ta=document.getElementById('table-area');
   const fx=document.getElementById('fx-layer');
   const potEl=document.getElementById('pot-area');
@@ -2865,7 +2865,7 @@ function animateCollectBoots(cb){
   let landed=0;
   order.forEach((seatId,k)=>{
     setTimeout(()=>{
-      if(sid!==G.sid) return;
+      if(sid!==G.sid||!guard()) return;
       const seatEl=document.getElementById('seat-'+seatId);
       if(!seatEl) return;
       const sRect=seatEl.getBoundingClientRect();
@@ -2889,18 +2889,18 @@ function animateCollectBoots(cb){
       if(seatId===LOCAL_SEAT){ const co=document.getElementById('coins-val'); if(co) co.textContent=left.toLocaleString(); }
       // …and the pot counts it up (with a little pop) as the chip lands. (render() sets the real numbers when the beat ends.)
       setTimeout(()=>{
-        if(sid!==G.sid) return;
+        if(sid!==G.sid||!guard()) return;
         landed++;
         if(potVal) potVal.textContent=(landed*G.currentBoot).toLocaleString();
         if(lbl){ lbl.classList.remove('pot-hit'); void lbl.offsetWidth; lbl.classList.add('pot-hit'); }
       },BOOT_FLIGHT_MS-60);
     },k*gap);
   });
-  setTimeout(()=>{ if(cb) cb(); },BOOT_ANIM_MS);
+  setTimeout(()=>{ if(guard()&&cb) cb(); },BOOT_ANIM_MS);
 }
 
 const DEAL_GAP_MS=110, DEAL_FLIGHT_MS=500;      // time between one card leaving the pot and the next · one card's flight (= .fly-card transition)
-function animateDealCards(cb){
+function animateDealCards(cb,guard=()=>true){
   const ta=document.getElementById('table-area');
   const fx=document.getElementById('fx-layer');
   const potEl=document.getElementById('pot-area');
@@ -2920,6 +2920,7 @@ function animateDealCards(cb){
       const delay=cardIdx*DEAL_GAP_MS;
       const seatId=order[k];
       setTimeout(()=>{
+        if(!guard()) return;
         const seatEl=document.getElementById('seat-'+seatId);
         if(!seatEl) return;
         const sRect=seatEl.getBoundingClientRect();
@@ -2940,7 +2941,7 @@ function animateDealCards(cb){
       cardIdx++;
     }
   }
-  setTimeout(()=>{ if(sid!==G.sid) return; render(); if(cb) cb(); }, cardIdx*DEAL_GAP_MS+DEAL_FLIGHT_MS+50);   // (sid check: you left the table mid-deal)
+  setTimeout(()=>{ if(sid!==G.sid||!guard()) return; render(); if(cb) cb(); }, cardIdx*DEAL_GAP_MS+DEAL_FLIGHT_MS+50);   // (sid check: you left the table mid-deal)
 }
 
 function tossChip(seatIdx,amount){
@@ -2975,6 +2976,58 @@ function tossChip(seatIdx,amount){
   const lbl=document.getElementById('pot-label');
   if(lbl) setTimeout(()=>{ lbl.classList.remove('pot-hit'); void lbl.offsetWidth; lbl.classList.add('pot-hit'); },(chipCount-1)*55+620);
   playChipSound(amount);
+}
+
+// Recreate only fresh server-started hands from public state; late joiners never replay an old deal.
+function animateServerRoundStart(state){
+  const round=Number(state?.round);
+  if(!Number.isInteger(round)||round===serverRoundFxRound) return;
+  serverRoundFxRound=round;
+  const age=Number(state.roundAgeMs);
+  if(!Number.isFinite(age)||age<0||age>SERVER_ROUND_FX_MAX_AGE_MS) return;
+  const sequence=++serverRoundFxSeq;
+  serverRoundFxActive=true;
+  serverRoundFxStage='boot';
+  const boot=Math.max(1,Number(state.currentBoot)||G.currentBoot);
+  // Show pre-boot stacks and empty hands in a temporary visual model; the live server snapshot stays authoritative.
+  G.players=G.players.map(player=>({...player,chips:player.chips+(player.folded?0:boot),hand:[]}));
+  G.pot=0; G.currentIdx=-1; G.currentBoot=boot; G.roundOver=false; G.collectingBoot=true; G.bigCardsKey=null;
+  render();
+  animateCollectBoots(()=>{
+    if(sequence!==serverRoundFxSeq) return;
+    // Restore the latest authoritative state; actions stay gated while the visible cards fly out.
+    serverRoundFxStage='deal';
+    applyServerMatchState(matchState,null);
+    G.collectingBoot=true; G.bigCardsKey=null;
+    render();
+    animateDealCards(()=>{
+      if(sequence!==serverRoundFxSeq) return;
+      serverRoundFxActive=false;
+      serverRoundFxStage=null;
+      G.collectingBoot=false;
+      render();
+      if(G.currentIdx===LOCAL_SEAT&&!G.roundOver) playTurnSound();
+    },()=>sequence===serverRoundFxSeq);
+  },()=>sequence===serverRoundFxSeq);
+}
+
+function playServerStateFeedback(state,previous){
+  if(!previous||Number(previous.round)!==Number(state.round)) return;
+  const oldPlayers=previous.players||[], nextPlayers=state.players||[];
+  let contributionBudget=Math.max(0,(Number(state.pot)||0)-(Number(previous.pot)||0));
+  nextPlayers.forEach((player,index)=>{
+    const old=oldPlayers[index]; if(!old) return;
+    const paid=Math.min(contributionBudget,Math.max(0,(Number(old.chips)||0)-(Number(player.chips)||0)));
+    if(paid>0){ tossChip(index,paid); contributionBudget-=paid; }
+    if(!old.seen&&player.seen) playPeekSound();
+    if(!old.folded&&player.folded) playPackSound();
+  });
+  if(!previous.roundOver&&state.roundOver&&Number(previous.pot)>0){
+    const winner=Number.isInteger(state.lastWinner)?state.lastWinner:G.lastWinnerIdx;
+    if(Number.isInteger(winner)){ potToSeat(winner); if(winner===LOCAL_SEAT) playWinSound(); else playLoseSound(); }
+  }
+  if(!previous.pendingSideshow&&state.pendingSideshow) playShowSound();
+  if(previous.currentSeat!==state.currentSeat&&state.currentSeat===LOCAL_SEAT&&!state.roundOver) playTurnSound();
 }
 
 function potToSeat(seatIdx){
@@ -3393,6 +3446,7 @@ function renderPotChips(){
 function availableActions(idx){
   if(G.tournamentMatch && idx===LOCAL_SEAT && serverActions){
     const a={...serverActions, myTurn:G.currentIdx===idx, inHand:G.players.filter(x=>!x.folded).length, raiseBet:serverActions.raiseBet??G.currentBet*2, raisePay:serverActions.raisePay??(serverActions.raise?G.currentBet*2:0), sideshowTarget:serverActions.sideshowTarget, ssUsed:false, ssDenied:false, ssBroke:false};
+    if(G.collectingBoot){ ['pack','see','blind','chaal','raise','show','sideshow'].forEach(k=>a[k]=false); a.myTurn=false; }
     return a;
   }
   const p=G.players[idx];
@@ -4725,6 +4779,8 @@ async function killTable(){                        // step 2: only reachable fro
 let joinPassword=null;                             // the joiner's OWN password, kept in memory only for WebSocket authentication
 let joinSeat=null, joinRole=null, matchSocket=null, matchReconnectTimer=null, matchState=null, serverActions=null;
 let serverTurnTicker=null, serverTurnDeadline=null;
+let serverRoundFxRound=null, serverRoundFxSeq=0, serverRoundFxActive=false, serverRoundFxStage=null;
+const SERVER_ROUND_FX_MAX_AGE_MS=5000;
 let joinTableInfo=null;                            // table settings the server sent for the waiting screen (start date/time etc.)
 function openJoinTournament(){
   document.getElementById('join-pass-input').value='';
@@ -4736,6 +4792,8 @@ function closeJoinPass(){ document.getElementById('join-pass-overlay').classList
 
 async function submitJoinPass(){
   const val=document.getElementById('join-pass-input').value.trim();
+  // Unlock mobile browser audio synchronously inside the player's submit gesture, before the auth request awaits.
+  ensureAudio();
   const btn=document.getElementById('btn-join-pass-submit');
   const errEl=document.getElementById('join-pass-error');
   btn.disabled=true;
@@ -4784,7 +4842,7 @@ function showJoinSeated(result){
   document.getElementById('join-seated-overlay').classList.add('show');
   startJoinCountdown();
 }
-function closeJoinSeated(){ stopJoinCountdown(); closeMatchSocket(); stopServerTurnCountdown(); joinPassword=null; joinSeat=null; joinRole=null; matchState=null; joinTableInfo=null; document.getElementById('join-seated-overlay').classList.remove('show'); }
+function closeJoinSeated(){ stopJoinCountdown(); closeMatchSocket(); stopServerTurnCountdown(); serverRoundFxSeq++; serverRoundFxRound=null; serverRoundFxActive=false; serverRoundFxStage=null; G.collectingBoot=false; joinPassword=null; joinSeat=null; joinRole=null; matchState=null; joinTableInfo=null; document.getElementById('join-seated-overlay').classList.remove('show'); }
 
 // ── "Waiting for the match to start in 01:23:45" — live countdown on the seated / observing screen ──
 // Counts to the admin's start date/time (entered in IST = UTC+5:30). Date only → that day at 00:00; time only → today at that time.
@@ -4834,6 +4892,7 @@ function closeMatchSocket(){ if(matchReconnectTimer){ clearTimeout(matchReconnec
 function updateLiveWait(text){ const box=document.getElementById('join-wait'); if(box) box.innerHTML=`<div class="join-waiting-note">${text}</div>`; }
 function applyServerRevealEvent(m){
   if(!Array.isArray(m.hands)) return;
+  playShowSound();
   const revealed=[];
   for(const item of m.hands){
     const index=Number(item.seat)-1;
@@ -4876,9 +4935,10 @@ function handleMatchMessage(m){
     joinTableInfo=m.tableInfo||joinTableInfo; tickJoinCountdown();
     if(m.ended){ closeJoinSeated(); showMatchEnded({winner:m.winner}); }
   }else if(m.t==='matchState'){
+    const previous=matchState;
     matchState=m;
     if(!G.tournamentMatch) startServerMatchUI(m);
-    else applyServerMatchState(m);
+    else applyServerMatchState(m,previous);
     if(m.roundOver===false) document.getElementById('winner-overlay')?.classList.remove('show');
     updateLiveWait(m.status==='live'?'Match is live — game state connected.':'Match state received.');
     if(m.gameOver) showMatchEnded({winner:m.players.find(p=>p.seat===m.king+1)?.name||'the winner'});
@@ -4898,6 +4958,7 @@ function serverPlayerFromState(player, index){
     folded:!!player.folded,
     seen:!!player.seen,
     hand:Array.isArray(player.hand)?player.hand:[],
+    handCount:Number(player.handCount)||0,
     bet:Number(player.bet)||0,
     lastBet:Number(player.bet)||0,
     isBot:false,
@@ -4907,7 +4968,7 @@ function serverPlayerFromState(player, index){
     returnDeadline:player.returnDeadline||null,
   };
 }
-function applyServerMatchState(state){
+function applyServerMatchState(state,previousState=null){
   if(!state||!Array.isArray(state.players)) return;
   const count=Math.min(NUM_SEATS,state.players.length);
   const mapped=state.players.slice(0,count).map(serverPlayerFromState);
@@ -4927,7 +4988,12 @@ function applyServerMatchState(state){
   G.showdown=false;
   G.revealSeats=[];
   clearTimeout(G.serverRevealTimer);
-  G.collectingBoot=false;
+  if(serverRoundFxActive&&Number(state.round)===serverRoundFxRound&&serverRoundFxStage==='boot'){
+    const boot=Math.max(1,Number(state.currentBoot)||G.currentBoot);
+    G.players=G.players.map(player=>({...player,chips:player.chips+(player.folded?0:boot),hand:[]}));
+    G.pot=0; G.currentIdx=-1;
+  }
+  G.collectingBoot=serverRoundFxActive;
   G.sideshow=state.pendingSideshow?{reqIdx:state.pendingSideshow.asker-1,tgtIdx:state.pendingSideshow.target-1,phase:'ask'}:null;
   const ssReq=state.pendingSideshow;
   const ssOverlay=document.getElementById('ssreq-overlay');
@@ -4943,6 +5009,8 @@ function applyServerMatchState(state){
   clearInterval(G.timerInt); G.timerInt=null; G.timerOn=false;
   syncServerTurnCountdown(state.turnRemainingMs);
   render();
+  if(serverRoundFxRound!==Number(state.round)) animateServerRoundStart(state);
+  else playServerStateFeedback(state,previousState);
 }
 function startServerMatchUI(state){
   G.tournamentMatch=true;

@@ -90,6 +90,9 @@ const manager = new MatchManager({
   assert.equal(aliceState.players[1].name, 'Bob');
   assert.equal(bobState.players[0].name, 'Alice');
   assert.equal(bobState.players[1].name, 'Bob');
+  assert.equal(aliceState.players[0].handCount, 3, 'seat 1 must receive public hand count for dealing animation');
+  assert.equal(aliceState.players[1].handCount, 3, 'opponent hand count may be public without revealing cards');
+  assert.ok(aliceState.roundAgeMs >= 0 && aliceState.roundAgeMs < 10_000, 'new live state must include round age for late-join effect suppression');
   const revealEvents = [];
   manager.realtime.clients = new Set(clients);
   manager.realtime.send = (client, message) => { if (message.t === 'showdownReveal' || message.t === 'sideshowReveal') revealEvents.push({ client, message }); };

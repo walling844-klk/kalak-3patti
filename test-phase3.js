@@ -12,6 +12,10 @@ for (const marker of [
   'function startServerMatchUI',
   'function applyServerMatchState',
   'function syncServerTurnCountdown',
+  'function animateServerRoundStart(state)',
+  'function playServerStateFeedback(state,previous)',
+  'SERVER_ROUND_FX_MAX_AGE_MS=5000',
+  'ensureAudio();\n  const btn=document.getElementById(\'btn-join-pass-submit\');',
   'function serverSend',
   "serverSend({t:'action',action:type})",
   "serverSend({t:'sideshowResponse',accept:!!accept})",
@@ -32,7 +36,11 @@ assert.ok(stopBody && /closeMatchSocket\(\)/.test(stopBody),
   'explicit leave/cleanup must continue to close the WebSocket');
 assert.match(script, /syncServerTurnCountdown\(state\.turnRemainingMs\)/,
   'browser must sync its turn countdown from server-computed remaining time');
+assert.match(script, /playServerStateFeedback\(state,previousState\)/,
+  'server state transitions must trigger tournament chip, peek, fold, and result feedback');
+assert.match(script, /animateCollectBoots\(\(\)=>\{[\s\S]*?animateDealCards\(/,
+  'a fresh tournament hand must animate and sound boot collection before card dealing');
 const timerBody = script.match(/function syncServerTurnCountdown\(remainingMs\)\{([\s\S]*?)\n\}/)?.[1];
 assert.ok(timerBody && /Date\.now\(\)\+Math\.min\(TURN_SECS\*1000,remaining\)/.test(timerBody) && /setInterval\(paint,250\)/.test(timerBody),
   'server turn countdown must repaint continuously on connected devices');
-console.log('Phase 3 browser integration tests passed: server state adapter, actions, reconnect, polling removal, lobby socket retention, and server-synchronized turn countdown.');
+console.log('Phase 3 browser integration tests passed: server state adapter, actions, reconnect, polling removal, lobby socket retention, synchronized turn countdown, and tournament audiovisual effects.');

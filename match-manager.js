@@ -43,6 +43,7 @@ class MatchManager {
     this.started = false;
     this.starting = false;
     this.restoring = false;
+    this.roundStartedAt = 0;
     this.connectedSeats = new Set();
     this.computerSeats = new Set();
     this.restrictedBotSeats = new Set();
@@ -71,6 +72,7 @@ class MatchManager {
       return false;
     }
     this.engine = TeenPattiEngine.restore(snapshot);
+    this.roundStartedAt = 0;
     this.carryPot = Number(snapshot.carryPot) || 0;
     this.totalChips = snapshot.totalChips ?? this.engine.players.reduce((sum, player) => sum + player.chips, 0) + this.engine.pot + this.carryPot;
     this.absences = new Map(Array.isArray(snapshot.absences) ? snapshot.absences.map(item => [item.seat, { ...item, connected: false }]) : []);
@@ -240,6 +242,7 @@ class MatchManager {
     this.started = true;
     this.starting = false;
     this.engine.startRound();
+    this.roundStartedAt = Date.now();
     this.totalChips = this.engine.players.reduce((sum, player) => sum + player.chips, 0) + this.engine.pot;
     this.audit('match_started', { seats: config.numPlayers, computerSeats: [...this.computerSeats] });
     await this.persist();
@@ -265,6 +268,8 @@ class MatchManager {
     return {
       t: 'matchState', status: this.engine.gameOver ? 'ended' : 'live', round: raw.round,
       dealer: raw.dealer, currentSeat: raw.currentSeat, lastWinner: raw.lastWinner,
+      roundStartedAt: this.roundStartedAt,
+      roundAgeMs: this.roundStartedAt ? Math.max(0, Date.now() - this.roundStartedAt) : null,
       turnDeadline: this.turnDeadline,
       turnRemainingMs: this.turnDeadline == null ? null : Math.max(0, this.turnDeadline - Date.now()),
       currentBoot: raw.currentBoot, currentBet: raw.currentBet, pot: raw.pot,
@@ -274,6 +279,7 @@ class MatchManager {
       players: raw.players.map(player => ({
         seat: player.seat + 1, name: player.name, chips: player.chips, folded: player.folded,
         standing: player.standing, seen: player.seen, bet: player.bet,
+        handCount: player.hand.length,
         hand: player.seat === ownSeat ? player.hand : null,
         actions: client.role === 'player' && player.seat === ownSeat ? this.engine.actionsFor(player.seat) : undefined,
         absent: this.absences.has(player.seat) ? true : undefined,
@@ -380,6 +386,7 @@ class MatchManager {
       if (!this.engine || !this.engine.roundOver || this.engine.gameOver) return;
       try {
         this.engine.startRound();
+        this.roundStartedAt = Date.now();
         if (this.carryPot > 0) { this.engine.pot += this.carryPot; this.carryPot = 0; }
         this.assertInvariants('next_round');
         this.persist().then(() => { this.armTurnTimer(); this.broadcastState(); this.maybeBotTurn(); }).catch(() => {});
@@ -547,6 +554,7 @@ class MatchManager {
     this.started = false;
     this.starting = false;
     this.restoring = false;
+    this.roundStartedAt = 0;
     this.connectedSeats.clear();
     this.computerSeats.clear();
     this.restrictedBotSeats.clear();
