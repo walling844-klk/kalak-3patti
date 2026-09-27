@@ -10,7 +10,7 @@ const LIFECYCLE_TICK_MS = 1_000;
 const BOT_TURN_DELAY_MS = 450;
 const RETURN_WINDOW_MS = 10 * 60 * 1000;
 const DISCONNECT_GRACE_MS = 30_000;
-const BOT_TAKEOVER_ROUNDS = 3;
+const BOT_TAKEOVER_ROUNDS = 2;
 
 function istDateString(now = Date.now()) {
   // Use the IST calendar date for time-only schedules. UTC can still be on
@@ -166,16 +166,6 @@ class MatchManager {
     const now = Date.now();
     for (const [seat, absence] of this.absences) {
       if (absence.connected) continue;
-      if (!absence.botControlled && absence.botEligibleAt && now >= absence.botEligibleAt) {
-        absence.botControlled = true;
-        absence.restricted = true;
-        absence.deadline = now + RETURN_WINDOW_MS;
-        this.computerSeats.add(seat);
-        this.restrictedBotSeats.add(seat);
-        this.audit('restricted_bot_started', { seat: seat + 1, deadline: absence.deadline });
-        this.broadcastState();
-        this.maybeBotTurn();
-      }
       if (absence.botControlled && absence.deadline && now >= absence.deadline) await this.kickAbsentSeat(seat, absence);
     }
   }
@@ -252,10 +242,8 @@ class MatchManager {
     const startNow = Date.now();
     for (const seat of this.humanSeats(config)) {
       if (!this.connectedSeats.has(seat)) {
-        const absence = { seat, disconnectedAt: startNow, botEligibleAt: startNow, deadline: startNow + RETURN_WINDOW_MS, missedRounds: 0, timeoutStreak: 0, timedOutThisRound: false, restricted: true, botControlled: true };
+        const absence = { seat, disconnectedAt: startNow, botEligibleAt: null, deadline: null, missedRounds: 0, timeoutStreak: 0, timedOutThisRound: false, restricted: false, botControlled: false, connected: false };
         this.absences.set(seat, absence);
-        this.computerSeats.add(seat);
-        this.restrictedBotSeats.add(seat);
       }
     }
     const names = Array.from({ length: config.numPlayers }, (_, i) => config.players[i]?.name || `Player${i + 1}`);
@@ -686,12 +674,13 @@ class MatchManager {
       await this.deleteSnapshot();
     } else if (this.engine.roundOver) {
       for (const absence of this.absences.values()) {
-        if (absence.timedOutThisRound) absence.missedRounds = (absence.missedRounds || 0) + 1;
+        if (absence.timedOutThisRound || absence.connected === false) absence.missedRounds = (absence.missedRounds || 0) + 1;
         absence.timedOutThisRound = false;
         absence.turnsThisRound = 0;
         if (absence.missedRounds >= BOT_TAKEOVER_ROUNDS && !absence.botControlled) {
           absence.botControlled = true;
           absence.restricted = true;
+          absence.botEligibleAt = Date.now();
           absence.deadline = Date.now() + RETURN_WINDOW_MS;
           this.computerSeats.add(absence.seat);
           this.restrictedBotSeats.add(absence.seat);
