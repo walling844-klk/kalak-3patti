@@ -12,6 +12,10 @@ for (const marker of [
   'function startServerMatchUI',
   'function applyServerMatchState',
   'function syncServerTurnCountdown',
+  'function showTournamentRoundResult',
+  'function syncServerSideshow',
+  'function finishTournamentMatch',
+  'function clearTournamentConnection',
   'function animateServerRoundStart(state)',
   'function playServerStateFeedback(state,previous)',
   'SERVER_ROUND_FX_MAX_AGE_MS=5000',
@@ -20,6 +24,9 @@ for (const marker of [
   "serverSend({t:'action',action:type})",
   "serverSend({t:'sideshowResponse',accept:!!accept})",
   "serverSend({t:'standUp'})",
+  "serverSend({t:'sideshowContinue'})",
+  "m.t==='roundResult'",
+  "m.t==='error'",
   "new WebSocket(matchSocketUrl())",
 ]) assert.ok(html.includes(marker), `missing Phase 3 marker: ${marker}`);
 assert.equal(html.includes('joinPollTimer'), false, 'waiting screen must not use the old polling timer');
@@ -38,6 +45,14 @@ assert.match(script, /syncServerTurnCountdown\(state\.turnRemainingMs\)/,
   'browser must sync its turn countdown from server-computed remaining time');
 assert.match(script, /playServerStateFeedback\(state,previousState\)/,
   'server state transitions must trigger tournament chip, peek, fold, and result feedback');
+assert.match(script, /showTournamentRoundResult\(\{\.\.\.m\.lastRoundResult,remainingMs:m\.nextRoundRemainingMs\}\)/,
+  'authoritative ordinary rounds and showdowns must display the local-style result popup');
+assert.match(script, /finishTournamentMatch\(m\.players\.find\(/,
+  'game-over state must close live tournament networking before showing the final winner screen');
+assert.match(script, /if\(G\.tournamentMatch\)\{ clearTournamentConnection\(true\)/,
+  'Exit Table must explicitly release the tournament socket and timers');
+assert.match(script, /if\(G\.tournamentMatch\)\{ serverSend\(\{t:'sideshowContinue'\}\); return; \}/,
+  'sideshow Continue must be server-authoritative in tournament mode');
 assert.match(script, /animateCollectBoots\(\(\)=>\{[\s\S]*?animateDealCards\(/,
   'a fresh tournament hand must animate and sound boot collection before card dealing');
 const timerBody = script.match(/function syncServerTurnCountdown\(remainingMs\)\{([\s\S]*?)\n\}/)?.[1];

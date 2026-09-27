@@ -39,6 +39,8 @@ const third = engine.currentSeat;
 engine.action(third, 'pack');
 assert.equal(engine.roundOver, true);
 assert.equal(engine.events.some(e => e.type === 'roundEnded'), true);
+assert.equal(engine.lastRoundResult.round, 1);
+assert.ok(engine.lastRoundResult.winner >= 0 && engine.lastRoundResult.winner < 3);
 
 // Sideshow: tie goes to the accepter, so the asker is eliminated.
 const sideshow = new TeenPattiEngine({ seats: 3, startingChips: 100, dealer: 0, random: seeded(8) });
@@ -56,6 +58,9 @@ sideshow.currentSeat = asker;
 sideshow.action(asker, 'sideshow');
 assert.deepEqual(sideshow.pendingSideshow, { asker, target });
 sideshow.respondSideshow(true);
+sideshow.pendingSideshow && assert.equal(sideshow.pendingSideshow.phase, 'reveal');
+assert.equal(sideshow.players[asker].folded, false, 'accepted sideshow stays open during the reveal animation');
+sideshow.completeSideshow();
 assert.equal(sideshow.players[asker].folded, true);
 assert.equal(sideshow.players[target].folded, false);
 
@@ -102,6 +107,7 @@ for (let i = 0; i < 5000; i += 1) {
     else if (actions.sideshow && simulationRandom() < 0.06) {
       sim.action(seat, 'sideshow');
       sim.respondSideshow(simulationRandom() > 0.45);
+      if (sim.pendingSideshow?.phase === 'reveal') sim.completeSideshow();
     } else if (actions.pack && player.seen && simulationRandom() < 0.16) sim.action(seat, 'pack');
     else if (actions.blind) sim.action(seat, 'blind');
     else if (actions.chaal) sim.action(seat, 'chaal');

@@ -3782,6 +3782,7 @@ function startSideshow(reqIdx,tgtIdx){
 function closeSideshow(){
   const ss=G.sideshow;
   if(!ss||ss.phase!=='reveal') return;             // (a pending request is answered by respondSideshow, not here)
+  if(G.tournamentMatch){ serverSend({t:'sideshowContinue'}); return; }
   clearTimeout(G.sideshowTimer);
   stopAutoContinue('ss');
   G.sideshow=null;
@@ -4281,6 +4282,7 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeMenu(); });
 // counter is bumped so nothing that was already queued can fire afterwards. PLAY VS COMPUTER then starts a brand-new table.
 function exitTable(){
   closeMenu();
+  if(G.tournamentMatch){ clearTournamentConnection(true); G.tournamentMatch=false; tournamentGameOverHandled=false; }
   G.sid++;
   G.collectingBoot=false;
   stopDealClip();
@@ -4779,6 +4781,7 @@ async function killTable(){                        // step 2: only reachable fro
 let joinPassword=null;                             // the joiner's OWN password, kept in memory only for WebSocket authentication
 let joinSeat=null, joinRole=null, matchSocket=null, matchReconnectTimer=null, matchState=null, serverActions=null;
 let serverTurnTicker=null, serverTurnDeadline=null;
+let serverRoundResultKey=null;
 let serverRoundFxRound=null, serverRoundFxSeq=0, serverRoundFxActive=false, serverRoundFxStage=null;
 const SERVER_ROUND_FX_MAX_AGE_MS=5000;
 let joinTableInfo=null;                            // table settings the server sent for the waiting screen (start date/time etc.)
@@ -4903,9 +4906,7 @@ function applyServerRevealEvent(m){
   }
   G.revealSeats=revealed;
   if(m.t==='showdownReveal'){
-    G.showdown=true;
-    G.roundOver=true;
-    G.lastWinnerIdx=Number(m.winner)-1;
+    G.showdown=true; G.roundOver=true; G.lastWinnerIdx=Number(m.winner)-1;
     msg(`SHOW: ${seatName(G.lastWinnerIdx)} wins ₹${Number(m.amount||0).toLocaleString()}. Both hands are revealed.`);
     const winner=m.hands.find(item=>Number(item.seat)===Number(m.winner));
     const losers=m.hands.filter(item=>Number(item.seat)!==Number(m.winner));
@@ -4913,13 +4914,104 @@ function applyServerRevealEvent(m){
     document.getElementById('w-hand-label').textContent=winner?.score?.lab||'';
     document.getElementById('winner-cards').innerHTML=winner?ssCardsHTML(winner.hand):'';
     document.getElementById('loser-list').innerHTML=losers.map(item=>`<div class="loser-row"><div class="l-name">${Number(item.seat)-1===LOCAL_SEAT?'YOUR HAND':seatName(Number(item.seat)-1).toUpperCase()+"'S HAND"}</div><div class="w-hand">${item.score?.lab||''}</div><div class="loser-cards">${ssCardsHTML(item.hand)}</div></div>`).join('');
-    document.getElementById('winner-overlay').classList.add('show');
   }else{
-    msg(`SIDESHOW: ${seatName(Number(m.winner)-1)} wins the compare — ${seatName(Number(m.loser)-1)} folds.`);
+    const asker=Number(m.asker)-1,target=Number(m.target)-1,winner=Number(m.winner)-1;
+    G.sideshow={reqIdx:asker,tgtIdx:target,reqWins:winner===asker,phase:'reveal'};
+    const mine=m.hands.find(item=>Number(item.seat)-1===LOCAL_SEAT);
+    const other=m.hands.find(item=>Number(item.seat)-1!==LOCAL_SEAT);
+    if(mine&&other){
+      const myScore=evalHand(mine.hand),oppScore=evalHand(other.hand),iWin=winner===LOCAL_SEAT;
+      document.getElementById('ss-title').textContent=LOCAL_SEAT===asker?'SIDESHOW':`SIDESHOW · ${seatName(asker).toUpperCase()} ASKED`;
+      document.getElementById('ss-opp-name').textContent=seatName(Number(other.seat)-1);
+      document.getElementById('ss-opp-hand').textContent=oppScore.lab;
+      document.getElementById('ss-opp-cards').innerHTML=ssCardsHTML(other.hand);
+      document.getElementById('ss-my-hand').textContent=myScore.lab;
+      document.getElementById('ss-my-cards').innerHTML=ssCardsHTML(mine.hand);
+      document.getElementById('ss-opp-row').className='ss-row'+(iWin?'':' win');
+      document.getElementById('ss-my-row').className='ss-row'+(iWin?' win':'');
+      const res=document.getElementById('ss-result'); res.className=iWin?'win':'lose';
+      res.textContent=iWin?`You win — ${seatName(Number(other.seat)-1)} folds`:`${seatName(Number(other.seat)-1)} wins — you fold`;
+      document.getElementById('sideshow-overlay').classList.add('show');
+      startAutoContinue('ss',()=>{},AUTO_CONTINUE_SECS);
+    }
+    msg(`SIDESHOW: ${seatName(winner)} wins the compare — ${seatName(Number(m.loser)-1)} folds.`);
   }
   render();
   clearTimeout(G.serverRevealTimer);
   G.serverRevealTimer=setTimeout(()=>{ G.revealSeats=[]; if(!G.showdown) render(); },5000);
+}
+let tournamentGameOverHandled=false;
+function clearTournamentConnection(sendLeave=true){
+  if(sendLeave&&matchSocket&&matchSocket.readyState===WebSocket.OPEN){ try{matchSocket.send(JSON.stringify({t:'leave'}));}catch(_){} }
+  joinPassword=null; joinSeat=null; joinRole=null; joinTableInfo=null;
+  stopJoinCountdown(); closeMatchSocket(); stopServerTurnCountdown();
+  clearTimeout(G.botTimer); clearTimeout(G.sideshowTimer); clearTimeout(G.serverRevealTimer);
+  ['round','ss','ssreq'].forEach(stopAutoContinue);
+  clearInterval(G.bootTimer); G.bootTimer=null;
+  document.getElementById('sideshow-overlay')?.classList.remove('show');
+  document.getElementById('ssreq-overlay')?.classList.remove('show');
+  serverActions=null; matchState=null;
+  serverRoundFxSeq++; serverRoundFxRound=null; serverRoundFxActive=false; serverRoundFxStage=null;
+  G.sideshow=null; G.revealSeats=[]; G.collectingBoot=false;
+}
+function finishTournamentMatch(winnerName){
+  if(tournamentGameOverHandled) return;
+  tournamentGameOverHandled=true;
+  G.gameOver=true;
+  if(G.kingIdx==null) G.kingIdx=G.players.findIndex(p=>p.name===winnerName);
+  clearTournamentConnection(false);
+  setTimeout(()=>{ if(G.tournamentMatch&&G.gameOver) showKing(); },1200);
+}
+function showTournamentRoundResult(result){
+  if(!result||result.round==null||result.winner==null||G.gameOver) return;
+  const key=`${result.round}:${result.winner}:${result.amount}`;
+  if(serverRoundResultKey===key) return;
+  serverRoundResultKey=key;
+  const winner=Number(result.winner)-1, showdown=!!result.showdown;
+  G.lastWinnerIdx=winner; G.roundOver=true;
+  document.getElementById('w-name').textContent=winner===LOCAL_SEAT?`YOU WIN ₹${Number(result.amount||0).toLocaleString()}!`:`${seatName(winner)} WINS ₹${Number(result.amount||0).toLocaleString()}!`;
+  if(!showdown){
+    document.getElementById('w-hand-label').textContent='Everyone else packed';
+    document.getElementById('winner-cards').innerHTML='<div class="winner-card back"></div><div class="winner-card back"></div><div class="winner-card back"></div>';
+    document.getElementById('loser-list').innerHTML='';
+  }
+  document.getElementById('w-dealer-note').innerHTML=`<span class="d-badge">D</span>${winner===LOCAL_SEAT?'You deal':seatName(winner)+' deals'} the next round`;
+  const resultDelay=showdown?1450:500;
+  const remaining=Number(result.remainingMs);
+  const wait=Number.isFinite(remaining)?Math.max(0,Math.min(resultDelay,remaining-7000)):resultDelay;
+  setTimeout(()=>{
+    if(!G.tournamentMatch||G.round!==Number(result.round)||!G.roundOver) return;
+    document.getElementById('winner-overlay').classList.add('show');
+    const secs=Number.isFinite(remaining)?Math.max(1,Math.ceil((remaining-wait)/1000)):AUTO_CONTINUE_SECS;
+    startAutoContinue('round',()=>{},Math.min(AUTO_CONTINUE_SECS,secs));
+  },wait);
+}
+function syncServerSideshow(state){
+  const request=state.pendingSideshow, overlay=document.getElementById('ssreq-overlay');
+  if(!request){
+    if(overlay) overlay.classList.remove('show');
+    stopAutoContinue('ssreq');
+    if(G.sideshow?.phase==='reveal'){
+      document.getElementById('sideshow-overlay').classList.remove('show'); stopAutoContinue('ss'); G.sideshow=null;
+    }else if(G.sideshow?.phase==='ask') G.sideshow=null;
+    return;
+  }
+  const asker=Number(request.asker)-1,target=Number(request.target)-1;
+  G.sideshow={reqIdx:asker,tgtIdx:target,phase:request.phase||'ask'};
+  if(request.phase==='reveal'){
+    if(overlay) overlay.classList.remove('show'); stopAutoContinue('ssreq'); return;
+  }
+  if(asker!==LOCAL_SEAT&&target!==LOCAL_SEAT){ if(overlay) overlay.classList.remove('show'); return; }
+  if(overlay?.classList.contains('show')) return;
+  const waiting=asker===LOCAL_SEAT,box=document.getElementById('ssreq-box');
+  box.classList.toggle('waiting',waiting);
+  document.getElementById('ssq-title').textContent=waiting?'SIDESHOW REQUESTED':'SIDESHOW REQUEST';
+  document.getElementById('ssq-text').textContent=waiting?`Waiting for ${seatName(target)} to answer…`:`${seatName(asker)} asks you for a SIDESHOW`;
+  document.getElementById('ssq-sub').textContent=waiting?'If they deny, you carry on with a normal move.':`Both hands get compared and the lower one packs (on a tie, the one who asked packs). ${SIDESHOW_TIMEOUT_ACCEPTS?'No answer = accepted.':'No answer = denied.'}`;
+  document.getElementById('ssq-timer-pre').textContent=waiting?'Request expires in':'Answer within';
+  overlay.classList.add('show');
+  const deadline=Number(state.sideshowDeadline),remain=Number.isFinite(deadline)&&deadline>0?Math.max(1,Math.ceil((deadline-Date.now())/1000)):SIDESHOW_REQ_SECS;
+  startAutoContinue('ssreq',()=>{},remain);
 }
 function handleMatchMessage(m){
   if(m.t==='pong'){
@@ -4934,14 +5026,48 @@ function handleMatchMessage(m){
   }else if(m.t==='lobby'){
     joinTableInfo=m.tableInfo||joinTableInfo; tickJoinCountdown();
     if(m.ended){ closeJoinSeated(); showMatchEnded({winner:m.winner}); }
+  }else if(m.t==='error'){
+    msg(`Action rejected: ${m.error||'Please try again.'}`);
+    if(m.code==='action') serverSend({t:'resume'});
+  }else if(m.t==='actionFeedback'){
+    const seat=Number(m.seat)-1,who=seat===LOCAL_SEAT?'You':seatName(seat),cost=Number(m.cost||0);
+    if(m.action==='see') msg(seat===LOCAL_SEAT?'You looked at your cards.':`${seatName(seat)} looked at their cards.`);
+    else if(m.action==='blind') msg(`${who} bet BLIND ₹${cost}.`);
+    else if(m.action==='chaal') msg(`${who} CALLED ₹${cost}.`);
+    else if(m.action==='raise') msg(`${who} ${m.seen?'SEEN':'BLIND'} RAISE ×2 — stake is now ₹${Number(m.currentBet||0)}.`);
+    else if(m.action==='show') msg(`${who} called SHOW${cost>0?' (₹'+cost+')':''}.`);
+    else if(m.action==='sideshow') msg(`${who} asks ${seatName(Number(m.target)-1)} for a SIDESHOW…`);
+  }else if(m.t==='roundResult'){
+    if(matchState?.round===m.round&&!serverRoundResultKey) showTournamentRoundResult({...m,remainingMs:matchState.nextRoundRemainingMs});
+  }else if(m.t==='sideshowRequested'){
+    if(matchState?.pendingSideshow) syncServerSideshow(matchState);
+  }else if(m.t==='sideshowDenied'){
+    const asker=Number(m.asker)-1,target=Number(m.target)-1;
+    document.getElementById('ssreq-overlay')?.classList.remove('show'); stopAutoContinue('ssreq');
+    G.sideshow=null;
+    msg(target===LOCAL_SEAT?`${seatName(asker)}'s sideshow request lapsed or was denied.`:asker===LOCAL_SEAT?`${seatName(target)} denied your sideshow request — make your move.`:`${seatName(target)} denied ${seatName(asker)}'s sideshow request.`);
+  }else if(m.t==='sideshowResult'){
+    msg(`SIDESHOW: ${seatName(Number(m.winner)-1)} wins the compare — ${seatName(Number(m.loser)-1)} folds.`);
+  }else if(m.t==='sideshowCancelled'){
+    document.getElementById('ssreq-overlay')?.classList.remove('show'); stopAutoContinue('ssreq'); G.sideshow=null;
+  }else if(m.t==='folded'){
+    const seat=Number(m.seat)-1;
+    if(m.reason==='timeout') msg(`Time up — ${seat===LOCAL_SEAT?'you':seatName(seat)} PACKED.`);
+    else if(m.reason==='packed') msg(`${seat===LOCAL_SEAT?'You':seatName(seat)} PACKED.`);
+  }else if(m.t==='stoodUp'){
+    const seat=Number(m.seat)-1; msg(`${seat===LOCAL_SEAT?'You':seatName(seat)} stood up and surrendered ₹${Number(m.surrendered||0).toLocaleString()}.`);
   }else if(m.t==='matchState'){
     const previous=matchState;
     matchState=m;
     if(!G.tournamentMatch) startServerMatchUI(m);
     else applyServerMatchState(m,previous);
-    if(m.roundOver===false) document.getElementById('winner-overlay')?.classList.remove('show');
+    if(m.roundOver===false){
+      document.getElementById('winner-overlay')?.classList.remove('show');
+      stopAutoContinue('round'); serverRoundResultKey=null;
+    }else if(m.lastRoundResult) showTournamentRoundResult({...m.lastRoundResult,remainingMs:m.nextRoundRemainingMs});
+    syncServerSideshow(m);
     updateLiveWait(m.status==='live'?'Match is live — game state connected.':'Match state received.');
-    if(m.gameOver) showMatchEnded({winner:m.players.find(p=>p.seat===m.king+1)?.name||'the winner'});
+    if(m.gameOver) finishTournamentMatch(m.players.find(p=>p.seat===m.king+1)?.name||'the winner');
   }else if(m.t==='denied'){
     closeJoinSeated(); showComingSoon(m.code==='kicked'?'REMOVED':'JOIN TOURNAMENT',m.error||'The server closed this session.');
   }
@@ -4962,7 +5088,7 @@ function serverPlayerFromState(player, index){
     bet:Number(player.bet)||0,
     lastBet:Number(player.bet)||0,
     isBot:false,
-    avatarIdx:index,
+    avatarIdx:G.players?.[index]?.avatarIdx ?? index,
     absent:!!player.absent,
     botControlled:!!player.botControlled,
     returnDeadline:player.returnDeadline||null,
@@ -4994,14 +5120,11 @@ function applyServerMatchState(state,previousState=null){
     G.pot=0; G.currentIdx=-1;
   }
   G.collectingBoot=serverRoundFxActive;
-  G.sideshow=state.pendingSideshow?{reqIdx:state.pendingSideshow.asker-1,tgtIdx:state.pendingSideshow.target-1,phase:'ask'}:null;
+  G.sideshow=state.pendingSideshow?{reqIdx:state.pendingSideshow.asker-1,tgtIdx:state.pendingSideshow.target-1,phase:state.pendingSideshow.phase||'ask'}:null;
   const ssReq=state.pendingSideshow;
   const ssOverlay=document.getElementById('ssreq-overlay');
-  if(ssReq&&ssReq.target-1===LOCAL_SEAT){
-    document.getElementById('ssq-title').textContent='SIDESHOW REQUEST';
-    document.getElementById('ssq-text').textContent=`${G.players[ssReq.asker-1]?.name||'A player'} asks you for a SIDESHOW`;
-    if(ssOverlay) ssOverlay.classList.add('show');
-  }else if(ssOverlay){ ssOverlay.classList.remove('show'); }
+  if((!ssReq||ssReq.phase==='reveal')&&ssOverlay) ssOverlay.classList.remove('show');
+  if(!ssReq){ document.getElementById('sideshow-overlay').classList.remove('show'); stopAutoContinue('ss'); }
   G.ssAskedSeat=Number.isInteger(state.sideshowAskedSeat)?state.sideshowAskedSeat-1:-1;
   G.ssAskDenied=false;
   G.handId=state.round||G.handId;
@@ -5014,6 +5137,7 @@ function applyServerMatchState(state,previousState=null){
 }
 function startServerMatchUI(state){
   G.tournamentMatch=true;
+  tournamentGameOverHandled=false; serverRoundResultKey=null;
   const players=state.players||[];
   if(joinSeat!=null) LOCAL_SEAT=Math.max(0,Math.min(NUM_SEATS-1,joinSeat-1));
   NAMES=NAMES.map((name,index)=>players[index]?.name||name);
@@ -5071,7 +5195,7 @@ function formatMatchTime(hhmmss){                  // "19:30" / "19:30:00" -> "7
 }
 
 document.addEventListener('keydown',e=>{
-  if(e.key==='Escape'){ closeSoon(); closeAdminPass(); closeAdminPanelView(); closeJoinPass(); closeJoinSeated(); closeMatchEnded(); closeAvatarPicker(); }
+  if(e.key==='Escape'){ closeSoon(); closeAdminPass(); closeAdminPanelView(); closeJoinPass(); if(!G.tournamentMatch) closeJoinSeated(); closeMatchEnded(); closeAvatarPicker(); }
 });
 
 // ═══════════════════════

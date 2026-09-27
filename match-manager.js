@@ -1,9 +1,11 @@
 'use strict';
 
-const { TeenPattiEngine } = require('./game-engine');
+const { TeenPattiEngine, evaluateHand, compareHands, makeDeck } = require('./game-engine');
 
 const TURN_TIMEOUT_MS = 30_000;
-const NEXT_ROUND_DELAY_MS = 1_500;
+const NEXT_ROUND_DELAY_MS = 7_500;
+const SIDESHOW_RESPONSE_MS = 15_000;
+const SIDESHOW_REVEAL_MS = 7_000;
 const LIFECYCLE_TICK_MS = 1_000;
 const BOT_TURN_DELAY_MS = 450;
 const RETURN_WINDOW_MS = 10 * 60 * 1000;
@@ -47,11 +49,17 @@ class MatchManager {
     this.connectedSeats = new Set();
     this.computerSeats = new Set();
     this.restrictedBotSeats = new Set();
+    this.botPeekTimers = new Map();
     this.absences = new Map();
     this.turnTimer = null;
     this.turnDeadline = null;
+    this.turnSeat = null;
     this.nextRoundTimer = null;
     this.botTimer = null;
+    this.sideshowTimer = null;
+    this.sideshowDeadline = null;
+    this.sideshowPhase = null;
+    this.nextRoundDeadline = null;
     this.lifecycleTimer = setInterval(() => this.lifecycleTick().catch(error => console.error('Match lifecycle failed:', error.message)), LIFECYCLE_TICK_MS);
     this.lifecycleTimer.unref();
     this.persisting = Promise.resolve();
@@ -85,6 +93,7 @@ class MatchManager {
     this.started = true;
     this.restoring = false;
     await this.setStatus('live');
+    this.syncSideshowTimer();
     this.armTurnTimer();
     this.broadcastState();
     this.maybeBotTurn();
@@ -274,7 +283,19 @@ class MatchManager {
       turnRemainingMs: this.turnDeadline == null ? null : Math.max(0, this.turnDeadline - Date.now()),
       currentBoot: raw.currentBoot, currentBet: raw.currentBet, pot: raw.pot,
       roundOver: raw.roundOver, gameOver: raw.gameOver, king: raw.king,
-      pendingSideshow: raw.pendingSideshow ? { asker: raw.pendingSideshow.asker + 1, target: raw.pendingSideshow.target + 1 } : null,
+      pendingSideshow: raw.pendingSideshow ? {
+        asker: raw.pendingSideshow.asker + 1, target: raw.pendingSideshow.target + 1,
+        phase: raw.pendingSideshow.phase || 'ask',
+        winner: raw.pendingSideshow.winner == null ? null : raw.pendingSideshow.winner + 1,
+        loser: raw.pendingSideshow.loser == null ? null : raw.pendingSideshow.loser + 1,
+      } : null,
+      sideshowDeadline: this.sideshowDeadline,
+      nextRoundDeadline: this.nextRoundDeadline,
+      nextRoundRemainingMs: this.nextRoundDeadline == null ? null : Math.max(0, this.nextRoundDeadline - Date.now()),
+      lastRoundResult: raw.lastRoundResult ? {
+        round: raw.lastRoundResult.round, winner: raw.lastRoundResult.winner + 1,
+        amount: raw.lastRoundResult.amount, showdown: raw.lastRoundResult.showdown,
+      } : null,
       sideshowAskedSeat: raw.sideshowAskedSeat >= 0 ? raw.sideshowAskedSeat + 1 : null,
       players: raw.players.map(player => ({
         seat: player.seat + 1, name: player.name, chips: player.chips, folded: player.folded,
@@ -291,11 +312,30 @@ class MatchManager {
     };
   }
 
-  sendState(client) { if (this.realtime && client) this.realtime.send(client, this.stateFor(client)); }
+  sendState(client, replayReveals = true) {
+    if (!this.realtime || !client) return;
+    this.realtime.send(client, this.stateFor(client));
+    if (!replayReveals) return;
+    const result = this.engine?.lastRoundResult;
+    if (result?.showdown) {
+      const hands = this.engine.players.filter(player => !player.folded || player.seat === result.winner).map(player => ({
+        seat: player.seat + 1, hand: player.hand, score: evaluateHand(player.hand),
+      }));
+      this.realtime.send(client, { t: 'showdownReveal', winner: result.winner + 1, amount: result.amount, hands });
+    }
+    const pending = this.engine?.pendingSideshow;
+    if (pending?.phase === 'reveal' && client.role === 'player' && [pending.asker, pending.target].includes(client.seat - 1)) {
+      this.realtime.send(client, {
+        t: 'sideshowReveal', asker: pending.asker + 1, target: pending.target + 1,
+        winner: pending.winner + 1, loser: pending.loser + 1,
+        hands: [pending.asker, pending.target].map(seat => ({ seat: seat + 1, hand: this.engine.players[seat].hand })),
+      });
+    }
+  }
 
   broadcastState() {
     if (!this.realtime) return;
-    for (const client of this.realtime.clients) if (client.authenticated) this.sendState(client);
+    for (const client of this.realtime.clients) if (client.authenticated) this.sendState(client, false);
   }
 
   async persist() {
@@ -343,21 +383,27 @@ class MatchManager {
 
 
   armTurnTimer() {
+    const keepDeadline = this.turnSeat === this.engine?.currentSeat && this.turnDeadline != null && this.turnDeadline > Date.now();
     clearTimeout(this.turnTimer);
     this.turnTimer = null;
-    this.turnDeadline = null;
-    if (!this.engine || this.engine.roundOver || this.engine.gameOver || this.engine.currentSeat < 0 || this.computerSeats.has(this.engine.currentSeat)) return;
+    if (!this.engine || this.engine.roundOver || this.engine.gameOver || this.engine.currentSeat < 0) {
+      this.turnDeadline = null;
+      this.turnSeat = null;
+      return;
+    }
     const seat = this.engine.currentSeat;
-    this.turnDeadline = Date.now() + TURN_TIMEOUT_MS;
+    this.turnSeat = seat;
+    if (!keepDeadline) this.turnDeadline = Date.now() + TURN_TIMEOUT_MS;
+    const remaining = Math.max(0, this.turnDeadline - Date.now());
     this.turnTimer = setTimeout(() => {
       if (!this.engine || this.engine.currentSeat !== seat || this.engine.roundOver) return;
       this.applyAction(seat + 1, 'timeout').catch(error => this.sendErrorToSeat(seat + 1, error.message));
-    }, TURN_TIMEOUT_MS);
+    }, remaining);
   }
 
   maybeBotTurn() {
+    if (!this.engine || this.engine.roundOver || this.engine.gameOver || this.engine.pendingSideshow || !this.computerSeats.has(this.engine.currentSeat)) return;
     clearTimeout(this.botTimer);
-    if (!this.engine || this.engine.roundOver || this.engine.gameOver || !this.computerSeats.has(this.engine.currentSeat)) return;
     const seat = this.engine.currentSeat;
     this.botTimer = setTimeout(async () => {
       if (!this.engine || this.engine.currentSeat !== seat || this.engine.roundOver || !this.computerSeats.has(seat)) return;
@@ -370,34 +416,167 @@ class MatchManager {
           if (absence.turnsThisRound === 0 && actions.blind) { absence.turnsThisRound += 1; await this.applyAction(seat + 1, 'blind'); }
           else if (actions.pack) { absence.turnsThisRound += 1; await this.applyAction(seat + 1, 'pack'); }
           else if (actions.blind) await this.applyAction(seat + 1, 'blind');
-        } else if (actions.see) await this.applyAction(seat + 1, 'see');
-        else if (actions.show) await this.applyAction(seat + 1, 'show');
-        else if (actions.chaal) await this.applyAction(seat + 1, 'chaal');
-        else if (actions.blind) await this.applyAction(seat + 1, 'blind');
-        else if (actions.pack) await this.applyAction(seat + 1, 'pack');
+        } else await this.applyAction(seat + 1, this.chooseBotAction(seat));
       } catch (error) { this.sendErrorToSeat(seat + 1, error.message); }
-    }, BOT_TURN_DELAY_MS);
+    }, BOT_TURN_DELAY_MS + Math.floor(Math.random() * 900));
+  }
+
+  botEquity(seat, opponentCount) {
+    const hand = this.engine.players[seat].hand;
+    const own = evaluateHand(hand);
+    const used = new Set(hand.map(card => `${card.r}:${card.s}`));
+    const deck = makeDeck().filter(card => !used.has(`${card.r}:${card.s}`));
+    if (opponentCount <= 0) return 1;
+    if (opponentCount === 1) {
+      let wins = 0, total = 0;
+      for (let a = 0; a < deck.length; a += 1) for (let b = a + 1; b < deck.length; b += 1) for (let c = b + 1; c < deck.length; c += 1) {
+        if (compareHands(own, [deck[a], deck[b], deck[c]]) >= 0) wins += 1;
+        total += 1;
+      }
+      return total ? wins / total : 1;
+    }
+    let wins = 0;
+    const trials = Math.max(120, Math.floor(900 / opponentCount));
+    for (let trial = 0; trial < trials; trial += 1) {
+      const pool = deck.slice();
+      for (let i = pool.length - 1; i >= pool.length - opponentCount * 3; i -= 1) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [pool[i], pool[j]] = [pool[j], pool[i]];
+      }
+      let best = true;
+      for (let opponent = 0; opponent < opponentCount; opponent += 1) {
+        const end = pool.length - 1 - opponent * 3;
+        if (compareHands([pool[end], pool[end - 1], pool[end - 2]], own) > 0) { best = false; break; }
+      }
+      if (best) wins += 1;
+    }
+    return wins / trials;
+  }
+
+  chooseBotAction(seat) {
+    const engine = this.engine, player = engine.players[seat], actions = engine.actionsFor(seat);
+    const persona = [
+      { aggr: .40, bluff: .25, tight: .45, seenBias: .50 }, { aggr: .55, bluff: .35, tight: .35, seenBias: .60 },
+      { aggr: .25, bluff: .10, tight: .70, seenBias: .30 }, { aggr: .40, bluff: .45, tight: .30, seenBias: .70 },
+      { aggr: .45, bluff: .20, tight: .50, seenBias: .50 }, { aggr: .65, bluff: .30, tight: .25, seenBias: .55 },
+      { aggr: .35, bluff: .15, tight: .60, seenBias: .40 }, { aggr: .50, bluff: .40, tight: .35, seenBias: .65 },
+    ][seat] || { aggr: .4, bluff: .25, tight: .45, seenBias: .5 };
+    const opponents = engine.activeSeats().length - 1;
+    if (!player.seen) {
+      const stakeBite = Math.min(1, engine.currentBet / Math.max(player.chips, 1));
+      const seenChance = .10 + persona.seenBias * .4 + (engine.round > 1 ? .15 : 0) + stakeBite * .5;
+      if (player.chips >= engine.currentBet && Math.random() < seenChance) engine.action(seat, 'see');
+    }
+    const currentActions = engine.actionsFor(seat);
+    const cost = engine.moveCost(player);
+    const stackRatio = cost / Math.max(player.chips, 1);
+    const potOdds = cost / Math.max(engine.pot + cost, 1);
+    const winProb = player.seen ? this.botEquity(seat, opponents) : 1 / (opponents + 1);
+    const edge = winProb - potOdds;
+    if (currentActions.show) {
+      player.botShowCount = (player.botShowCount || 0) + 1;
+      const showChance = player.seen ? Math.min(.97, (edge > 0 ? .55 : .06) + winProb * .4 + player.botShowCount * .05 + persona.aggr * .1) : Math.min(.5, player.botShowCount * .06);
+      if (player.botShowCount >= 9 || Math.random() < showChance) return 'show';
+    }
+    const tolerance = Math.max(.01, .05 + persona.bluff * .12 - persona.tight * .08);
+    const bluffOn = Math.random() < (persona.bluff * .30 / (opponents + 1) + .02);
+    let action;
+    if (player.seen && edge < -tolerance && !bluffOn && opponents >= 1) action = 'pack';
+    else if (player.seen && edge > .18 && Math.random() < (.35 + persona.aggr * .55) && currentActions.raise) action = 'raise';
+    else if (player.seen && bluffOn && edge < 0 && opponents <= 2 && currentActions.raise) action = 'raise';
+    else if (!player.seen && currentActions.raise && Math.random() < persona.aggr * .06) action = 'raise';
+    else if (!player.seen && engine.round > 2 && stackRatio > .35 && Math.random() < persona.tight * .18 && opponents >= 1) action = 'pack';
+    else action = player.seen ? 'chaal' : 'blind';
+    if (action !== 'pack' && currentActions.sideshow) {
+      const ssWinProb = player.seen ? this.botEquity(seat, 1) : .5;
+      const ssChance = action === 'raise' ? .08 + persona.aggr * .10 : Math.min(.9, .30 + Math.max(0, ssWinProb - .4) * .9 + persona.tight * .15);
+      if (Math.random() < ssChance) return 'sideshow';
+    }
+    return currentActions[action] ? action : (currentActions.pack ? 'pack' : (currentActions.blind ? 'blind' : 'chaal'));
+  }
+
+  scheduleBotPeeks() {
+    if (!this.engine || this.engine.roundOver || this.engine.gameOver) return;
+    const round = this.engine.round;
+    const personas = [.50, .60, .30, .70, .50, .55, .40, .65];
+    for (const seat of this.computerSeats) {
+      const player = this.engine.players[seat];
+      if (!player || player.folded || player.seen || seat === this.engine.currentSeat || this.restrictedBotSeats.has(seat) || this.botPeekTimers.has(seat)) continue;
+      if (Math.random() > (personas[seat] || .5) * .22) continue;
+      const timer = setTimeout(async () => {
+        this.botPeekTimers.delete(seat);
+        const current = this.engine?.players[seat];
+        if (!this.engine || this.engine.round !== round || this.engine.roundOver || !current || current.folded || current.seen || current.chips < this.engine.currentBet) return;
+        try { this.engine.action(seat, 'see'); await this.afterAction(); }
+        catch (_) { /* a round transition or fold made the scheduled peek stale */ }
+      }, 400 + Math.floor(Math.random() * 1_401));
+      this.botPeekTimers.set(seat, timer);
+    }
   }
 
   scheduleNextRound() {
     clearTimeout(this.nextRoundTimer);
+    this.nextRoundDeadline = null;
     if (!this.engine || this.engine.gameOver) return;
+    const delay = this.engine.lastRoundResult?.showdown ? NEXT_ROUND_DELAY_MS + 950 : NEXT_ROUND_DELAY_MS;
+    this.nextRoundDeadline = Date.now() + delay;
     this.nextRoundTimer = setTimeout(() => {
       if (!this.engine || !this.engine.roundOver || this.engine.gameOver) return;
       try {
+        this.nextRoundDeadline = null;
         this.engine.startRound();
         this.roundStartedAt = Date.now();
         if (this.carryPot > 0) { this.engine.pot += this.carryPot; this.carryPot = 0; }
         this.assertInvariants('next_round');
         this.persist().then(() => { this.armTurnTimer(); this.broadcastState(); this.maybeBotTurn(); }).catch(() => {});
       } catch (_) { /* match may have ended between scheduling and execution */ }
-    }, NEXT_ROUND_DELAY_MS);
+    }, delay);
   }
 
   sendErrorToSeat(seat, error) {
     if (!this.realtime) return;
     const client = this.realtime.sessions.get(seat);
     if (client) this.realtime.send(client, { t: 'error', code: 'action', error });
+  }
+
+  syncSideshowTimer() {
+    const pending = this.engine?.pendingSideshow;
+    const phase = pending?.phase || (pending ? 'ask' : null);
+    if (!phase) {
+      clearTimeout(this.sideshowTimer);
+      this.sideshowTimer = null;
+      this.sideshowDeadline = null;
+      this.sideshowPhase = null;
+      return;
+    }
+    if (phase === this.sideshowPhase && this.sideshowTimer) return;
+    clearTimeout(this.sideshowTimer);
+    this.sideshowPhase = phase;
+    const delay = phase === 'ask' ? SIDESHOW_RESPONSE_MS : SIDESHOW_REVEAL_MS;
+    this.sideshowDeadline = Date.now() + delay;
+    const asker = pending.asker;
+    this.sideshowTimer = setTimeout(() => {
+      if (!this.engine?.pendingSideshow || this.engine.pendingSideshow.phase !== phase) return;
+      if (phase === 'ask') this.engine.respondSideshow(false);
+      else this.engine.completeSideshow();
+      this.afterAction().catch(error => this.sendErrorToSeat(asker + 1, error.message));
+    }, delay);
+    if (phase === 'ask' && this.computerSeats.has(pending.target)) this.scheduleBotSideshowResponse(pending.target, pending.asker);
+  }
+
+  scheduleBotSideshowResponse(target, asker) {
+    clearTimeout(this.botTimer);
+    this.botTimer = setTimeout(() => {
+      const pending = this.engine?.pendingSideshow;
+      if (!pending || pending.phase === 'reveal' || pending.target !== target || pending.asker !== asker) return;
+      const persona = [
+        { aggr: .40, tight: .45 }, { aggr: .55, tight: .35 }, { aggr: .25, tight: .70 }, { aggr: .40, tight: .30 },
+        { aggr: .45, tight: .50 }, { aggr: .65, tight: .25 }, { aggr: .35, tight: .60 }, { aggr: .50, tight: .35 },
+      ][target] || { aggr: .4, tight: .45 };
+      const winProb = this.botEquity(target, 1);
+      const chance = Math.max(.05, Math.min(.95, .5 + (winProb - .5) * 1.3 + persona.aggr * .08 - persona.tight * .05));
+      this.respondSideshow(target + 1, Math.random() < chance).catch(error => this.sendErrorToSeat(target + 1, error.message));
+    }, 1_200 + Math.floor(Math.random() * 1_801));
   }
 
   async applyAction(seat, type) {
@@ -434,6 +613,7 @@ class MatchManager {
 
   async respondSideshow(seat, accept) {
     if (!this.engine?.pendingSideshow) throw new Error('No sideshow request is pending.');
+    if (this.engine.pendingSideshow.phase === 'reveal') throw new Error('The sideshow response window has closed.');
     const target = this.engine.pendingSideshow.target;
     const asker = this.engine.pendingSideshow.asker;
     if (seat - 1 !== target && seat - 1 !== asker) throw new Error('You are not part of this sideshow.');
@@ -442,6 +622,14 @@ class MatchManager {
     this.assertInvariants('before_sideshow');
     this.engine.respondSideshow(Boolean(accept));
     this.assertInvariants('after_sideshow');
+    await this.afterAction();
+  }
+
+  async continueSideshow(seat) {
+    const pending = this.engine?.pendingSideshow;
+    if (!pending || pending.phase !== 'reveal') throw new Error('No sideshow reveal is pending.');
+    if (![pending.asker, pending.target].includes(Number(seat) - 1)) throw new Error('Only the two players in the sideshow can continue.');
+    this.engine.completeSideshow();
     await this.afterAction();
   }
 
@@ -457,8 +645,16 @@ class MatchManager {
     clearTimeout(this.turnTimer);
     clearTimeout(this.botTimer);
     const events = this.engine?.drainEvents?.() || [];
+    this.syncSideshowTimer();
     await this.persist();
     if (this.engine.gameOver) {
+      clearTimeout(this.nextRoundTimer);
+      this.nextRoundTimer = null;
+      this.nextRoundDeadline = null;
+      clearTimeout(this.sideshowTimer);
+      this.sideshowTimer = null;
+      this.sideshowDeadline = null;
+      this.sideshowPhase = null;
       const winner = this.engine.players[this.engine.king];
       const result = { winner: winner?.name || null, winnerSeat: this.engine.king + 1, finalStack: winner?.chips || 0, endedAt: Date.now() };
       await this.setStatus('ended', result);
@@ -479,10 +675,11 @@ class MatchManager {
       }
       this.scheduleNextRound();
     }
-    this.broadcastEngineEvents(events);
     this.armTurnTimer();
     this.broadcastState();
+    this.broadcastEngineEvents(events);
     this.maybeBotTurn();
+    this.scheduleBotPeeks();
   }
 
   broadcastEngineEvents(events) {
@@ -494,6 +691,9 @@ class MatchManager {
           hands: event.hands.map(item => ({ seat: item.seat + 1, hand: item.hand, score: item.score }))
         };
         for (const client of this.realtime.clients) if (client.authenticated) this.realtime.send(client, message);
+      } else if (event.type === 'roundEnded') {
+        const result = { t: 'roundResult', round: this.engine.round, winner: event.winner + 1, amount: event.amount, showdown: !!event.showdown };
+        for (const client of this.realtime.clients) if (client.authenticated) this.realtime.send(client, result);
       } else if (event.type === 'sideshowResolved') {
         const seats = [event.asker, event.target];
         const message = {
@@ -505,6 +705,26 @@ class MatchManager {
           if (!client.authenticated || client.role !== 'player' || !seats.includes(client.seat - 1)) continue;
           this.realtime.send(client, message);
         }
+        const result = { t: 'sideshowResult', asker: event.asker + 1, target: event.target + 1, winner: event.winner + 1, loser: event.loser + 1 };
+        for (const client of this.realtime.clients) if (client.authenticated) this.realtime.send(client, result);
+      } else if (event.type === 'actionPerformed') {
+        const message = { t: 'actionFeedback', seat: event.seat + 1, action: event.action, cost: event.cost, currentBet: event.currentBet, target: event.target == null ? null : event.target + 1, seen: event.seen };
+        for (const client of this.realtime.clients) if (client.authenticated) this.realtime.send(client, message);
+      } else if (event.type === 'sideshowRequested') {
+        const message = { t: 'sideshowRequested', asker: event.asker + 1, target: event.target + 1, deadline: this.sideshowDeadline };
+        for (const client of this.realtime.clients) if (client.authenticated) this.realtime.send(client, message);
+      } else if (event.type === 'sideshowDenied') {
+        const message = { t: 'sideshowDenied', asker: event.asker + 1, target: event.target + 1 };
+        for (const client of this.realtime.clients) if (client.authenticated) this.realtime.send(client, message);
+      } else if (event.type === 'sideshowCancelled') {
+        const message = { t: 'sideshowCancelled', asker: event.asker + 1, target: event.target + 1, reason: event.reason };
+        for (const client of this.realtime.clients) if (client.authenticated) this.realtime.send(client, message);
+      } else if (event.type === 'stoodUp') {
+        const message = { t: 'stoodUp', seat: event.seat + 1, surrendered: event.surrendered };
+        for (const client of this.realtime.clients) if (client.authenticated) this.realtime.send(client, message);
+      } else if (event.type === 'folded') {
+        const message = { t: 'folded', seat: event.seat + 1, reason: event.reason };
+        for (const client of this.realtime.clients) if (client.authenticated) this.realtime.send(client, message);
       }
     }
   }
@@ -534,6 +754,8 @@ class MatchManager {
       } else if (message.t === 'sideshowResponse') {
         if (typeof message.accept !== 'boolean') throw new Error('Invalid sideshow response.');
         await this.respondSideshow(client.seat, message.accept);
+      } else if (message.t === 'sideshowContinue') {
+        await this.continueSideshow(client.seat);
       }
       else if (message.t === 'standUp') await this.standUp(client.seat);
       else return false;
@@ -550,6 +772,7 @@ class MatchManager {
     clearTimeout(this.turnTimer);
     clearTimeout(this.nextRoundTimer);
     clearTimeout(this.botTimer);
+    clearTimeout(this.sideshowTimer);
     this.engine = null;
     this.started = false;
     this.starting = false;
@@ -558,12 +781,19 @@ class MatchManager {
     this.connectedSeats.clear();
     this.computerSeats.clear();
     this.restrictedBotSeats.clear();
+    for (const timer of this.botPeekTimers.values()) clearTimeout(timer);
+    this.botPeekTimers.clear();
     this.absences.clear();
     this.carryPot = 0;
     this.turnTimer = null;
     this.turnDeadline = null;
+    this.turnSeat = null;
     this.nextRoundTimer = null;
+    this.nextRoundDeadline = null;
     this.botTimer = null;
+    this.sideshowTimer = null;
+    this.sideshowDeadline = null;
+    this.sideshowPhase = null;
   }
 }
 

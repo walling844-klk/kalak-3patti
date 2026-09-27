@@ -101,6 +101,7 @@ class TeenPattiEngine {
     this.deck = [];
     this.currentSeat = -1;
     this.lastWinner = null;
+    this.lastRoundResult = null;
     this.roundOver = true;
     this.gameOver = false;
     this.king = null;
@@ -138,6 +139,7 @@ class TeenPattiEngine {
     }
     this.round += 1;
     this.pot = 0;
+    this.lastRoundResult = null;
     this.currentBet = this.cappedBet(this.options.startingBlind ?? this.currentBoot * 2);
     this.roundOver = false;
     this.pendingSideshow = null;
@@ -224,10 +226,16 @@ class TeenPattiEngine {
       if (player.folded || this.roundOver || player.seen) throw new Error('SEE is not available');
       player.seen = true;
       this.emit('seen', { seat });
+      this.emit('actionPerformed', { seat, action: type });
       return this.state();
     }
     const available = this.actionsFor(seat);
     if (!available[type]) throw new Error(`Action ${type} is not available for seat ${seat}`);
+    const cost = type === 'blind' ? Math.floor(this.currentBet / 2)
+      : type === 'chaal' ? this.currentBet
+        : type === 'raise' ? available.raisePay
+          : type === 'show' ? this.moveCost(player) : 0;
+    this.emit('actionPerformed', { seat, action: type, cost, currentBet: type === 'raise' ? available.raiseBet : this.currentBet, target: type === 'sideshow' ? available.sideshowTarget : undefined, seen: player.seen });
     if (type === 'pack') {
       this.fold(seat, 'packed');
     } else if (type === 'blind') {
@@ -253,9 +261,9 @@ class TeenPattiEngine {
 
   respondSideshow(accept) {
     const request = this.pendingSideshow;
-    if (!request) throw new Error('No sideshow request is pending');
-    this.pendingSideshow = null;
+    if (!request || request.phase === 'reveal') throw new Error('No sideshow request is pending');
     if (!accept) {
+      this.pendingSideshow = null;
       this.emit('sideshowDenied', request);
       return this.state();
     }
@@ -264,12 +272,30 @@ class TeenPattiEngine {
     const comparison = compareHands(asker.hand, target.hand);
     const winner = comparison > 0 ? request.asker : request.target; // tie goes to accepter
     const loser = winner === request.asker ? request.target : request.asker;
-    this.players[loser].folded = true;
+    this.pendingSideshow = { ...request, phase: 'reveal', winner, loser, comparison };
     this.emit('sideshowResolved', { ...request, winner, loser, comparison });
+    return this.state();
+  }
+
+  completeSideshow() {
+    const request = this.pendingSideshow;
+    if (!request || request.phase !== 'reveal') throw new Error('No sideshow reveal is pending');
+    this.pendingSideshow = null;
+    this.players[request.loser].folded = true;
+    this.emit('folded', { seat: request.loser, reason: 'lost sideshow' });
     if (this.activeSeats().length <= 1) this.resolveRound();
-    else if (winner === request.asker) this.emit('turnContinues', { seat: request.asker });
+    else if (request.winner === request.asker) this.emit('turnContinues', { seat: request.asker });
     else this.advance();
     return this.state();
+  }
+
+  cancelSideshow(reason = 'cancelled') {
+    if (!this.pendingSideshow) return false;
+    const request = this.pendingSideshow;
+    this.pendingSideshow = null;
+    this.sideshowAskedSeat = -1;
+    this.emit('sideshowCancelled', { asker: request.asker, target: request.target, reason });
+    return true;
   }
 
   fold(seat, reason = 'packed') {
@@ -281,7 +307,10 @@ class TeenPattiEngine {
     else if (seat === this.currentSeat) this.advance();
   }
 
-  timeout(seat) { return this.fold(seat, 'timeout'); }
+  timeout(seat) {
+    if (this.pendingSideshow?.asker === seat) this.cancelSideshow('turn timed out');
+    return this.fold(seat, 'timeout');
+  }
 
   advance() {
     if (this.roundOver) return;
@@ -314,6 +343,7 @@ class TeenPattiEngine {
     winner.chips += amount;
     this.pot = 0;
     this.lastWinner = winner.seat;
+    this.lastRoundResult = { round: this.round, winner: winner.seat, amount, showdown: caller != null };
     this.dealer = winner.seat;
     this.currentSeat = -1;
     this.emit('roundEnded', { winner: winner.seat, amount, showdown: caller != null, hands: caller != null ? active.map(p => ({ seat: p.seat, hand: p.hand, score: evaluateHand(p.hand) })) : undefined });
@@ -349,7 +379,7 @@ class TeenPattiEngine {
   state() {
     return {
       round: this.round, dealer: this.dealer, currentSeat: this.currentSeat,
-      lastWinner: this.lastWinner,
+      lastWinner: this.lastWinner, lastRoundResult: this.lastRoundResult ? { ...this.lastRoundResult } : null,
       currentBoot: this.currentBoot, pendingBoot: this.pendingBoot, currentBet: this.currentBet,
       pot: this.pot, roundOver: this.roundOver, gameOver: this.gameOver, king: this.king,
       pendingSideshow: this.pendingSideshow ? { ...this.pendingSideshow } : null,
@@ -369,6 +399,7 @@ class TeenPattiEngine {
       currentBoot: snapshot.currentBoot, pendingBoot: snapshot.pendingBoot, currentBet: snapshot.currentBet,
       pot: snapshot.pot, roundOver: snapshot.roundOver, gameOver: snapshot.gameOver, king: snapshot.king,
       pendingSideshow: snapshot.pendingSideshow, deck: snapshot.deck || [], lastWinner: snapshot.lastWinner ?? null,
+      lastRoundResult: snapshot.lastRoundResult ? { ...snapshot.lastRoundResult } : null,
       sideshowAskedSeat: snapshot.sideshowAskedSeat ?? -1,
     });
     engine.players = snapshot.players.map(p => ({ ...p, hand: p.hand.map(c => ({ ...c })) }));

@@ -137,5 +137,38 @@ const manager = new MatchManager({
   assert.deepEqual([...botManager.computerSeats], [1]);
   botManager.close();
 
+  const sideshowConfig = { ...config, numPlayers: 3, players: [
+    { seat: 1, name: 'One', password: 'one', type: 'human', kicked: false },
+    { seat: 2, name: 'Two', password: 'two', type: 'human', kicked: false },
+    { seat: 3, name: 'Three', password: 'three', type: 'human', kicked: false },
+  ] };
+  const sideMessages = [];
+  const sideRealtime = { clients: new Set(), sessions: new Map(), send(client, message) { sideMessages.push({ client, message }); } };
+  let sideSnapshot = null;
+  const sideManager = new MatchManager({ getConfig: () => sideshowConfig, saveConfig: () => {}, loadSnapshot: () => sideSnapshot, saveSnapshot: value => { sideSnapshot = value; }, deleteSnapshot: () => { sideSnapshot = null; }, realtime: sideRealtime });
+  const sideClients = sideshowConfig.players.map(player => ({ authenticated: true, role: 'player', seat: player.seat, name: player.name }));
+  for (const client of sideClients) { sideRealtime.clients.add(client); sideManager.register(client); }
+  await new Promise(resolve => setImmediate(resolve));
+  const asker = sideManager.engine.currentSeat;
+  const target = (asker - 1 + 3) % 3;
+  sideManager.engine.players[asker].seen = true;
+  sideManager.engine.players[target].seen = true;
+  const originalTurnDeadline = sideManager.turnDeadline;
+  await sideManager.applyAction(asker + 1, 'sideshow');
+  assert.ok(sideManager.sideshowDeadline > Date.now() && sideManager.sideshowDeadline <= Date.now() + 15_000, 'server must own a 15-second sideshow response deadline');
+  assert.equal(sideManager.stateFor(sideClients[2]).pendingSideshow.phase, 'ask');
+  assert.equal(sideManager.turnDeadline, originalTurnDeadline, 'asking must not restart the current player’s turn clock');
+  assert.equal(sideManager.stateFor(sideClients.find(c => c.seat === target + 1)).players[target].hand.length, 3);
+  await sideManager.respondSideshow(target + 1, true);
+  assert.equal(sideManager.engine.pendingSideshow.phase, 'reveal');
+  assert.ok(sideManager.sideshowDeadline > Date.now() && sideManager.sideshowDeadline <= Date.now() + 7_000, 'accepted sideshow reveal must end within the same seven-second local auto-continue window');
+  const secretRevealRecipients = sideMessages.filter(item => item.message.t === 'sideshowReveal').map(item => item.client.seat);
+  assert.deepEqual(secretRevealRecipients.sort(), [asker + 1, target + 1].sort(), 'only the two sideshow participants may receive either hand');
+  assert.equal(sideManager.stateFor(sideClients.find(c => c.seat !== asker + 1 && c.seat !== target + 1)).players[asker].hand, null, 'unrelated seat must not receive another player’s cards');
+  await assert.rejects(() => sideManager.continueSideshow(4 - asker - target), /Only the two players/);
+  await sideManager.continueSideshow(asker + 1);
+  assert.equal(sideManager.engine.pendingSideshow, null);
+  sideManager.close();
+
   console.log('Phase 4 lifecycle tests passed: schedule gate, computer seats, persistence, privacy, and restore.');
 })().catch(error => { console.error(error); process.exitCode = 1; });
