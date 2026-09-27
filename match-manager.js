@@ -636,7 +636,14 @@ class MatchManager {
   async standUp(seat) {
     if (!this.engine) throw new Error('The match has not started yet.');
     this.assertInvariants('before_stand_up');
-    this.engine.standUp(Number(seat) - 1);
+    const index = Number(seat) - 1;
+    const player = this.engine.players[index];
+    if (!player) throw new Error('Unknown seat.');
+    const surrendered = player.chips;
+    this.engine.standUp(index);
+    // A stand-up removes the uncommitted stack from play permanently. The conservation
+    // invariant therefore covers stacks + pot + carryPot after accounting for forfeiture.
+    if (this.totalChips != null) this.totalChips = Math.max(0, this.totalChips - surrendered);
     this.assertInvariants('after_stand_up');
     await this.afterAction();
   }
@@ -737,7 +744,11 @@ class MatchManager {
     this.absences.delete(index);
     this.computerSeats.delete(index);
     this.restrictedBotSeats.delete(index);
-    if (!this.engine.players[index].standing) this.engine.standUp(index);
+    if (!this.engine.players[index].standing) {
+      const surrendered = this.engine.players[index].chips;
+      this.engine.standUp(index);
+      if (this.totalChips != null) this.totalChips = Math.max(0, this.totalChips - surrendered);
+    }
     this.audit('admin_kick', { seat });
     await this.afterAction();
     return true;

@@ -170,5 +170,35 @@ const manager = new MatchManager({
   assert.equal(sideManager.engine.pendingSideshow, null);
   sideManager.close();
 
+  const standConfig = { ...config, numPlayers: 4, players: Array.from({ length: 4 }, (_, i) => ({ seat: i + 1, name: `Stand${i + 1}`, password: `stand${i + 1}`, type: 'human', kicked: false })) };
+  const standMessages = [];
+  const standRealtime = { clients: new Set(), sessions: new Map(), send(client, message) { standMessages.push({ client, message }); } };
+  let standSnapshot = null;
+  const standManager = new MatchManager({ getConfig: () => standConfig, saveConfig: () => {}, loadSnapshot: () => standSnapshot, saveSnapshot: value => { standSnapshot = value; }, deleteSnapshot: () => { standSnapshot = null; }, realtime: standRealtime });
+  const standClients = standConfig.players.map(player => ({ authenticated: true, role: 'player', seat: player.seat, name: player.name }));
+  for (const client of standClients) { standRealtime.clients.add(client); standRealtime.sessions.set(client.seat, client); standManager.register(client); }
+  await new Promise(resolve => setImmediate(resolve));
+  const initialStandChips = standConfig.numPlayers * standConfig.chipsPerPlayer;
+  const currentBeforeStand = standManager.engine.currentSeat;
+  const nonCurrent = (currentBeforeStand + 1) % 4;
+  const nonCurrentStack = standManager.engine.players[nonCurrent].chips;
+  await standManager.handleMessage({ t: 'standUp' }, standClients[nonCurrent]);
+  assert.equal(standManager.engine.players[nonCurrent].standing, true, 'non-current seat must stand up immediately');
+  assert.equal(standManager.engine.currentSeat, currentBeforeStand, 'standing a non-current seat must not disturb the active player');
+  assert.equal(standManager.totalChips, initialStandChips - nonCurrentStack, 'surrendered stack must be removed from the in-play conservation baseline');
+  const currentStack = standManager.engine.players[currentBeforeStand].chips;
+  await standManager.handleMessage({ t: 'standUp' }, standClients[currentBeforeStand]);
+  assert.equal(standManager.engine.players[currentBeforeStand].standing, true, 'current player must be allowed to stand up mid-hand');
+  assert.notEqual(standManager.engine.currentSeat, currentBeforeStand, 'turn must advance away from the standing player');
+  assert.equal(standManager.engine.roundOver, false, 'remaining live seats must keep the hand open');
+  assert.equal(standManager.totalChips, initialStandChips - nonCurrentStack - currentStack, 'both surrendered stacks must be accounted for');
+  assert.ok(standManager.turnDeadline > Date.now(), 'the next active seat must receive a fresh server turn deadline');
+  const nextSeat = standManager.engine.currentSeat;
+  assert.ok(standMessages.some(item => item.client.seat === nextSeat + 1 && item.message.t === 'matchState' && item.message.currentSeat === nextSeat), 'the next player must receive the new turn state');
+  const legal = standManager.engine.actionsFor(nextSeat);
+  await standManager.handleMessage({ t: 'action', action: legal.blind ? 'blind' : 'chaal' }, standClients[nextSeat]);
+  assert.ok(standManager.engine.currentSeat !== nextSeat || standManager.engine.roundOver, 'the hand must continue normally after Stand Up');
+  standManager.close();
+
   console.log('Phase 4 lifecycle tests passed: schedule gate, computer seats, persistence, privacy, and restore.');
 })().catch(error => { console.error(error); process.exitCode = 1; });
