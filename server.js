@@ -22,6 +22,7 @@ const http = require('http');
 const https = require('https');
 const { RealtimeServer } = require('./realtime');
 const { MatchManager } = require('./match-manager');
+const { DeuceMatchManager } = require('./deuce-match-manager');
 
 const app = express();
 app.use(express.json({ limit: '32kb', strict: true }));
@@ -43,6 +44,10 @@ const DEPLOY_SHORT = DEPLOY_COMMIT ? DEPLOY_COMMIT.slice(0, 7) : 'local (not on 
 const CONFIG_FILE = path.join(__dirname, 'tournament-config.json');
 const REDIS_KEY = 'kalak3patti:table';
 const MATCH_KEY = 'kalak3patti:match';
+const DEUCE_CONFIG_FILE = path.join(__dirname, 'deuce-tournament-config.json');
+const DEUCE_MATCH_FILE = path.join(__dirname, 'deuce-match-state.json');
+const DEUCE_REDIS_KEY = 'kalak3patti:deuce:table';
+const DEUCE_MATCH_KEY = 'kalak3patti:deuce:match';
 const UPSTASH_URL = (process.env.UPSTASH_REDIS_REST_URL || '').replace(/\/+$/, '');
 const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || '';
 const USE_REDIS = !!(UPSTASH_URL && UPSTASH_TOKEN);
@@ -138,6 +143,38 @@ async function writeMatchSnapshot(snapshot) {
   if (snapshot === null) { try { fs.unlinkSync(file); } catch (e) { /* already gone */ } }
   else fs.writeFileSync(file, JSON.stringify(snapshot));
 }
+async function readDeuceStored() {
+  if (USE_REDIS) {
+    const raw = await redisCmd(['GET', DEUCE_REDIS_KEY]);
+    return raw ? JSON.parse(raw) : null;
+  }
+  try { return JSON.parse(fs.readFileSync(DEUCE_CONFIG_FILE, 'utf8')); } catch (e) { return null; }
+}
+async function writeDeuceStored(cfg) {
+  if (USE_REDIS) {
+    if (cfg === null) await redisCmd(['DEL', DEUCE_REDIS_KEY]);
+    else await redisCmd(['SET', DEUCE_REDIS_KEY, JSON.stringify(cfg)]);
+    return;
+  }
+  if (cfg === null) { try { fs.unlinkSync(DEUCE_CONFIG_FILE); } catch (e) { /* already gone */ } }
+  else fs.writeFileSync(DEUCE_CONFIG_FILE, JSON.stringify(cfg, null, 2));
+}
+async function readDeuceMatchSnapshot() {
+  if (USE_REDIS) {
+    const raw = await redisCmd(['GET', DEUCE_MATCH_KEY]);
+    return raw ? JSON.parse(raw) : null;
+  }
+  try { return JSON.parse(fs.readFileSync(DEUCE_MATCH_FILE, 'utf8')); } catch (e) { return null; }
+}
+async function writeDeuceMatchSnapshot(snapshot) {
+  if (USE_REDIS) {
+    if (snapshot === null) await redisCmd(['DEL', DEUCE_MATCH_KEY]);
+    else await redisCmd(['SET', DEUCE_MATCH_KEY, JSON.stringify(snapshot)]);
+    return;
+  }
+  if (snapshot === null) { try { fs.unlinkSync(DEUCE_MATCH_FILE); } catch (e) { /* already gone */ } }
+  else fs.writeFileSync(DEUCE_MATCH_FILE, JSON.stringify(snapshot));
+}
 
 // The table lives in memory (fast) and is written through to storage on every change. It is loaded once at
 // startup; if storage can't be reached the API answers 503 instead of pretending "no table exists" — that way a
@@ -146,14 +183,27 @@ let TOURNAMENT_CONFIG = null;
 let loaded = false;
 let realtime = null;
 let matchManager = null;
+let DEUCE_CONFIG = null;
+let deuceLoaded = false;
+let deuceRealtime = null;
+let deuceManager = null;
 async function ensureLoaded() {
   if (loaded) return;
   TOURNAMENT_CONFIG = await readStored();
   loaded = true;
 }
+async function ensureDeuceLoaded() {
+  if (deuceLoaded) return;
+  DEUCE_CONFIG = await readDeuceStored();
+  deuceLoaded = true;
+}
 async function commit(newCfg) {                      // save first, only then change what's in memory
   await writeStored(newCfg);
   TOURNAMENT_CONFIG = newCfg;
+}
+async function commitDeuce(newCfg) {
+  await writeDeuceStored(newCfg);
+  DEUCE_CONFIG = newCfg;
 }
 app.use('/api', apiRateLimit, async (req, res, next) => {
   try { await ensureLoaded(); next(); }
@@ -266,6 +316,25 @@ function sanitizeConfig(raw) {
   };
 }
 
+function sanitizeDeuceConfig(raw) {
+  if (!raw || typeof raw !== 'object' || !Array.isArray(raw.players)) return { error: 'Malformed Deuce table config' };
+  const n = int(raw.numPlayers, 0, 2, 6);
+  if (n < 2) return { error: 'A Deuce table needs 2 to 6 seats.' };
+  const players = [];
+  for (let i = 1; i <= n; i++) {
+    const p = raw.players.find(x => x && x.seat === i);
+    if (!p) return { error: 'Deuce seat ' + i + ' is missing.' };
+    players.push({ seat: i, name: str(p.name, 24) || 'Player' + i, password: str(p.password, 40) || String(i), type: p.type === 'computer' ? 'computer' : 'human', kicked: false });
+  }
+  const observerPassword = str(raw.observerPassword, 40) || 'abc';
+  const humanPws = players.filter(p => p.type === 'human').map(p => p.password);
+  if (new Set(humanPws).size !== humanPws.length) return { error: 'Two Deuce players have the same password.' };
+  if (humanPws.includes(observerPassword)) return { error: 'The Deuce observer password matches a player password.' };
+  if (!validDate(raw.matchStartDate == null ? '' : raw.matchStartDate)) return { error: 'Deuce match start date must be a real date.' };
+  if (!validTime(raw.matchStartTime == null ? '' : raw.matchStartTime)) return { error: 'Deuce match start time is not valid.' };
+  return { config: { numPlayers: n, players, observerPassword, matchStartDate: raw.matchStartDate || '', matchStartTime: raw.matchStartTime || '', status: 'waiting', createdAt: Date.now() } };
+}
+
 // ── ADMIN: login gate for the UI. Every write below checks the password again, so this alone authorizes nothing. ──
 app.post('/api/admin/login', (req, res) => {
   if (blocked(req.ip)) return res.status(429).json({ error: 'Too many attempts — wait a minute.' });
@@ -349,6 +418,91 @@ app.post('/api/admin/table/start-now', wrap(async (req, res) => {
   res.json({ ok: true, config: TOURNAMENT_CONFIG });
 }));
 
+// ── DEUCE ADMIN: the Deuce tournament is intentionally separate from Kalak’s table/config ──
+app.post('/api/deuce/admin/table/get', wrap(async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  await ensureDeuceLoaded();
+  res.json({ config: DEUCE_CONFIG, matchStatus: deuceManager ? await deuceManager.adminState() : null });
+}));
+
+app.post('/api/deuce/admin/table', wrap(async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  await ensureDeuceLoaded();
+  if (DEUCE_CONFIG) return res.status(409).json({ error: 'A Deuce table is already online. Kill it first to create a new one.' });
+  const { config, error } = sanitizeDeuceConfig((req.body || {}).config);
+  if (error) return res.status(400).json({ error });
+  await commitDeuce(config);
+  if (deuceRealtime) deuceRealtime.broadcastLobby(DEUCE_CONFIG);
+  res.json({ ok: true, config });
+}));
+
+app.post('/api/deuce/admin/table/kill', wrap(async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  await ensureDeuceLoaded();
+  await commitDeuce(null);
+  if (deuceManager) { await deuceManager.reset(); await deuceManager.deleteStoredSnapshot(); }
+  if (deuceRealtime) deuceRealtime.broadcastLobby(null);
+  res.json({ ok: true });
+}));
+
+app.post('/api/deuce/admin/table/kick', wrap(async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  await ensureDeuceLoaded();
+  if (!DEUCE_CONFIG) return res.status(404).json({ error: 'No Deuce table is online.' });
+  const seat = parseInt((req.body || {}).seat, 10);
+  const target = DEUCE_CONFIG.players.find(player => player.seat === seat);
+  if (!target) return res.status(400).json({ error: 'No such Deuce seat.' });
+  if (target.type !== 'human') return res.status(400).json({ error: 'Computer seats cannot be kicked.' });
+  if (!target.kicked) {
+    await commitDeuce({ ...DEUCE_CONFIG, players: DEUCE_CONFIG.players.map(player => player.seat === seat ? { ...player, kicked: true } : player) });
+    if (deuceManager) await deuceManager.adminKick(seat);
+    if (deuceRealtime) deuceRealtime.broadcastLobby(DEUCE_CONFIG);
+  }
+  res.json({ ok: true, config: DEUCE_CONFIG });
+}));
+
+app.post('/api/deuce/admin/table/start', wrap(async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  await ensureDeuceLoaded();
+  if (!DEUCE_CONFIG) return res.status(404).json({ error: 'No Deuce table is online.' });
+  const b = req.body || {};
+  const matchStartDate = b.matchStartDate == null ? '' : b.matchStartDate;
+  const matchStartTime = b.matchStartTime == null ? '' : b.matchStartTime;
+  if (!validDate(matchStartDate)) return res.status(400).json({ error: 'Deuce match start date must be a real date.' });
+  if (!validTime(matchStartTime)) return res.status(400).json({ error: 'Deuce match start time is not valid.' });
+  await commitDeuce({ ...DEUCE_CONFIG, matchStartDate, matchStartTime });
+  if (deuceRealtime) deuceRealtime.broadcastLobby(DEUCE_CONFIG);
+  res.json({ ok: true, config: DEUCE_CONFIG });
+}));
+
+app.post('/api/deuce/admin/table/start-now', wrap(async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  await ensureDeuceLoaded();
+  if (!DEUCE_CONFIG) return res.status(404).json({ error: 'No Deuce table is online.' });
+  if (!deuceManager) return res.status(503).json({ error: 'Deuce match manager is unavailable.' });
+  if (deuceManager.started) return res.status(409).json({ error: 'The Deuce match has already started.' });
+  if (!await deuceManager.startNow()) return res.status(409).json({ error: 'The Deuce match could not start. Configure at least two playable seats.' });
+  res.json({ ok: true, config: DEUCE_CONFIG });
+}));
+
+app.post('/api/deuce/join', async (req, res) => {
+  await ensureDeuceLoaded();
+  if (blocked(req.ip)) return res.status(429).json({ error: 'Too many attempts — wait a minute.' });
+  if (!DEUCE_CONFIG) return res.status(404).json({ error: 'No Deuce tournament has been created yet.' });
+  const password = req.body?.password;
+  const tableInfo = { numPlayers: DEUCE_CONFIG.numPlayers, matchStartDate: DEUCE_CONFIG.matchStartDate || '', matchStartTime: DEUCE_CONFIG.matchStartTime || '' };
+  if (typeof password === 'string' && password) {
+    const player = DEUCE_CONFIG.players.find(candidate => candidate.type === 'human' && safeEqual(candidate.password, password));
+    if (player) {
+      if (player.kicked) return res.status(403).json({ error: 'You have been removed from the Deuce tournament.', kicked: true });
+      return res.json({ kind: 'seat', seat: player.seat, name: player.name, tableInfo, status: DEUCE_CONFIG.status, ...(DEUCE_CONFIG.result ? { ended: true, winner: DEUCE_CONFIG.result.winner } : {}) });
+    }
+    if (DEUCE_CONFIG.observerPassword && safeEqual(DEUCE_CONFIG.observerPassword, password)) return res.json({ kind: 'observer', tableInfo, status: DEUCE_CONFIG.status, ...(DEUCE_CONFIG.result ? { ended: true, winner: DEUCE_CONFIG.result.winner } : {}) });
+  }
+  recordFailure(req.ip);
+  res.status(401).json({ error: 'Incorrect Deuce tournament password' });
+});
+
 // ── PLAYER: find a seat (or the observer slot) by password. Only ever returns THIS caller's own seat info plus
 // general table settings — never the seat list or anyone else's password. ──
 app.post('/api/join', (req, res) => {
@@ -409,4 +563,27 @@ matchManager = new MatchManager({
   audit,
 });
 matchManager.restoreIfPresent().catch(error => console.error('Match restore failed:', error.message));
+
+deuceRealtime = new RealtimeServer({
+  server: httpServer,
+  path: '/deuce-ws',
+  getConfig: async () => { if (!deuceLoaded) await ensureDeuceLoaded(); return DEUCE_CONFIG; },
+  checkBlocked: ip => blocked(ip),
+  recordFailure: ip => recordFailure(ip),
+  onAuthenticated: client => { if (deuceManager) deuceManager.register(client); },
+  onClose: client => { if (deuceManager) deuceManager.unregister(client); },
+  onLeave: () => {},
+  isSeatExited: () => false,
+  onMessage: (message, client) => deuceManager ? deuceManager.handleMessage(message, client) : false,
+});
+deuceManager = new DeuceMatchManager({
+  getConfig: async () => { if (!deuceLoaded) await ensureDeuceLoaded(); return DEUCE_CONFIG; },
+  saveConfig: commitDeuce,
+  loadSnapshot: readDeuceMatchSnapshot,
+  saveSnapshot: writeDeuceMatchSnapshot,
+  deleteSnapshot: () => writeDeuceMatchSnapshot(null),
+  realtime: deuceRealtime,
+  audit,
+});
+deuceManager.restoreIfPresent().catch(error => console.error('Deuce match restore failed:', error.message));
 httpServer.listen(PORT, () => console.log(`KALAK 3PATTI server listening on :${PORT}`));

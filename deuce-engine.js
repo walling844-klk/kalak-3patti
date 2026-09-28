@@ -298,10 +298,14 @@ class DeuceEngine {
       this.winner = winner;
       return { ...this.state(), groupResult: result, gameOver: true, winner };
     }
+    this.dealer = winner == null ? this.dealer : winner;
+    if (this.currentGroupIndex >= GROUPS_PER_HAND - 1) {
+      const next = this.startRound();
+      return { ...next, groupResult: result, roundComplete: true };
+    }
     this.currentGroupIndex += 1;
     this.currentGroups = Array.from({ length: this.seats }, () => null);
     this.groupCyclePlayed = new Set();
-    this.dealer = winner == null ? this.dealer : winner;
     this.actor = this.nextPlayableSeat(this.dealer);
     return { ...this.state(), groupResult: result };
   }
@@ -326,6 +330,27 @@ class DeuceEngine {
         actions: viewSeat === player.seat && !this.gameOver && !player.packed && player.seat === this.actor ? { group: true, play: this.availableGroupIndices(player), pack: true } : undefined,
       })),
     };
+  }
+
+  snapshot() {
+    return {
+      seats: this.seats, names: this.names.slice(), computerSeats: [...this.computerSeats], round: this.round, hand: this.hand,
+      dealer: this.dealer, actor: this.actor, currentGroupIndex: this.currentGroupIndex, gameOver: this.gameOver, winner: this.winner,
+      groupCyclePlayed: [...this.groupCyclePlayed], currentGroups: this.currentGroups,
+      players: this.players,
+    };
+  }
+
+  static restore(snapshot) {
+    if (!snapshot || !Array.isArray(snapshot.players)) throw new Error('Invalid Deuce snapshot.');
+    const engine = new DeuceEngine({ seats: snapshot.seats, names: snapshot.names, computerSeats: snapshot.computerSeats });
+    for (const key of ['round', 'hand', 'dealer', 'actor', 'currentGroupIndex', 'gameOver', 'winner']) {
+      if (snapshot[key] !== undefined) engine[key] = snapshot[key];
+    }
+    engine.groupCyclePlayed = new Set(snapshot.groupCyclePlayed || []);
+    engine.currentGroups = snapshot.currentGroups || Array.from({ length: engine.seats }, () => null);
+    engine.players = snapshot.players;
+    return engine;
   }
 }
 

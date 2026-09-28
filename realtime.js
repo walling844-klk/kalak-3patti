@@ -15,7 +15,7 @@ function safeEqual(a, b) {
 }
 
 class RealtimeServer {
-  constructor({ server, getConfig, checkBlocked, recordFailure, allowedOrigins = [], onMessage, onAuthenticated, onClose, onLeave, isSeatExited } = {}) {
+  constructor({ server, path = '/ws', getConfig, checkBlocked, recordFailure, allowedOrigins = [], onMessage, onAuthenticated, onClose, onLeave, isSeatExited } = {}) {
     if (!server || !getConfig) throw new Error('RealtimeServer requires an HTTP server and getConfig callback');
     this.getConfig = getConfig;
     this.checkBlocked = checkBlocked || (() => false);
@@ -29,7 +29,16 @@ class RealtimeServer {
     this.sessions = new Map();
     this.sessionLocks = new Map();
     this.clients = new Set();
-    this.wss = new WebSocketServer({ server, path: '/ws', maxPayload: 8192 });
+    this.path = path;
+    this.server = server;
+    this.wss = new WebSocketServer({ noServer: true, maxPayload: 8192 });
+    this.upgradeHandler = (request, socket, head) => {
+      let pathname = '';
+      try { pathname = new URL(request.url, 'http://localhost').pathname; } catch (_) { return; }
+      if (pathname !== this.path) return;
+      this.wss.handleUpgrade(request, socket, head, ws => this.wss.emit('connection', ws, request));
+    };
+    server.on('upgrade', this.upgradeHandler);
     this.wss.on('connection', (socket, request) => this.handleConnection(socket, request));
     this.heartbeat = setInterval(() => this.runHeartbeat(), 10000);
     this.heartbeat.unref();
@@ -272,6 +281,9 @@ class RealtimeServer {
 
   close() {
     clearInterval(this.heartbeat);
+    // The HTTP server may host more than one RealtimeServer (for separate games).
+    // Remove only this channel's upgrade listener when it is closed.
+    this.server?.off?.('upgrade', this.upgradeHandler);
     for (const client of this.clients) client.socket.close(1000, 'server closing');
     this.wss.close();
   }
