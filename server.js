@@ -33,6 +33,7 @@ app.set('trust proxy', 1);
 app.use(express.static(path.join(__dirname, 'public')));
 // The game keeps its existing filename, so the root URL is pointed at it explicitly.
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'KALAK_3PATTI.html')));
+app.get(['/deuce', '/deuce/'], (req, res) => res.sendFile(path.join(__dirname, 'public', 'KALAK_3PATTI_DEUCE_OF_SPADES.html')));
 
 const PORT = process.env.PORT || 3000;
 // Render sets these automatically at build+run time — no setup needed. Locally (no Render) they are blank.
