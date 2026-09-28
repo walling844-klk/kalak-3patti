@@ -7077,5 +7077,13 @@ function avatarIndexForName(name,fallbackIdx=0){
   window.dctKill=dctKill;
 })();
 </script>
+<script>
+// The dedicated /deuce route opens directly on the Deuce launcher instead of the combined MAIN MENU.
+document.addEventListener('DOMContentLoaded',()=>{
+  const root=document.getElementById('root-menu-overlay');
+  const deuce=document.getElementById('deuce-overlay');
+  if(root&&deuce){root.style.display='none';deuce.style.display='flex';}
+});
+</script>
 </body>
 </html>
