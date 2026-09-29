@@ -10,6 +10,8 @@
     try { const res = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) }); const data = await res.json().catch(() => ({})); return { ok: res.ok, status: res.status, data }; }
     catch (_) { return { ok: false, status: 0, data: { error: 'Could not reach the server — try again.' } }; }
   }
+  function formatDateInput(el) { const d = el.value.replace(/\D/g, '').slice(0, 8); el.value = d.length > 4 ? `${d.slice(0, 2)}/${d.slice(2, 4)}/${d.slice(4)}` : d.length > 2 ? `${d.slice(0, 2)}/${d.slice(2)}` : d; }
+  function isoToDmy(value) { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value || ''); return m ? `${m[3]}/${m[2]}/${m[1]}` : (value || ''); }
   function normalizeDate(value) { const raw = String(value || '').trim(); if (!raw) return ''; if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw; const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(raw); return match ? `${match[3]}-${match[2]}-${match[1]}` : raw; }
   function notice(text, error) { const node = $('deuce-message') || $('dct-status'); if (!node) return; node.textContent = text; node.classList.toggle('error', !!error); node.classList.add('show'); clearTimeout(notice.timer); notice.timer = setTimeout(() => node.classList.remove('show', 'error'), 4200); }
   function websocketUrl() { return `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/deuce-ws`; }
@@ -187,7 +189,7 @@
     R.adminConfig = config;
     $('dct-num-players').value = config.numPlayers || 6;
     for (let i = 1; i <= 6; i++) { const p = config.players?.find(x => x.seat === i); $(`dct-name-${i}`).value = p?.name || `Player${i}`; $(`dct-pw-${i}`).value = p?.password || String(i); $(`dct-type-${i}`).value = p?.type || 'human'; }
-    $('dct-observer-pw').value = config.observerPassword || 'abc'; $('dct-start-date').value = config.matchStartDate || ''; $('dct-start-time').value = config.matchStartTime || '';
+    $('dct-observer-pw').value = config.observerPassword || 'abc'; $('dct-start-date').value = isoToDmy(config.matchStartDate); $('dct-start-time').value = config.matchStartTime || '';
     updateAdminSeats();
   }
   function updateAdminSeats() { const n = Number($('dct-num-players').value || 6); document.querySelectorAll('#dadmin-create-table-view .dct-seat').forEach(node => node.style.display = Number(node.dataset.seat) <= n ? '' : 'none'); }
@@ -210,6 +212,7 @@
   window.submitDeuceAdminPass = submitAdmin;
   window.showDeuceAdminView = showAdminView;
   window.dctUpdateSeats = updateAdminSeats;
+  window.dctFormatDateInput = formatDateInput;
   window.dctConfirm = confirmTable;
   window.dctUpdateStart = updateStart;
   window.dctStartNow = startNow;
