@@ -200,7 +200,9 @@
   async function confirmTable() { const n = Number($('dct-num-players').value); const players = []; for (let seat = 1; seat <= n; seat++) players.push({ seat, name: $(`dct-name-${seat}`).value.trim() || `Player${seat}`, password: $(`dct-pw-${seat}`).value.trim() || String(seat), type: $(`dct-type-${seat}`).value === 'computer' ? 'computer' : 'human' }); const body = { adminPassword: R.adminPassword, config: { numPlayers: n, players, observerPassword: $('dct-observer-pw').value.trim() || 'abc', matchStartDate: normalizeDate($('dct-start-date').value), matchStartTime: $('dct-start-time').value || '' } }; const result = await api('/api/deuce/admin/table', body); if (!result.ok) return notice(result.data.error || 'Could not create table.', true); populateAdmin(result.data.config); refreshAdmin(result.data.config); notice('Deuce tournament table is online.'); }
   async function updateStart() { const result = await api('/api/deuce/admin/table/start', { adminPassword: R.adminPassword, matchStartDate: normalizeDate($('dct-edit-date').value), matchStartTime: $('dct-edit-time').value || '' }); if (!result.ok) return notice(result.data.error, true); populateAdmin(result.data.config); refreshAdmin(result.data.config); }
   async function startNow() { const result = await api('/api/deuce/admin/table/start-now', { adminPassword: R.adminPassword }); if (!result.ok) return notice(result.data.error, true); populateAdmin(result.data.config); refreshAdmin(result.data.config); }
-  async function killTable() { if (!confirm('Kill the Deuce tournament table?')) return; const result = await api('/api/deuce/admin/table/kill', { adminPassword: R.adminPassword }); if (!result.ok) return notice(result.data.error, true); R.adminConfig = null; $('dadmin-panel-overlay').classList.remove('show'); notice('Deuce table killed.'); }
+  function askKill() { $('btn-dct-kill').style.display = 'none'; $('dct-kill-confirm').style.display = 'block'; $('dct-kill-confirm').scrollIntoView?.({ block: 'end' }); }
+  function cancelKill() { $('dct-kill-confirm').style.display = 'none'; $('btn-dct-kill').style.display = ''; $('btn-dct-kill-yes').disabled = false; }
+  async function killTable() { const yes = $('btn-dct-kill-yes'); yes.disabled = true; const result = await api('/api/deuce/admin/table/kill', { adminPassword: R.adminPassword }); if (!result.ok) { yes.disabled = false; return notice(result.data.error || 'Could not kill the table.', true); } R.adminConfig = null; cancelKill(); refreshAdmin(null); $('dadmin-panel-overlay').classList.remove('show'); notice('Deuce table killed.'); }
 
   window.openDeuceJoinTournament = openJoin;
   window.submitJoinPass = submitJoin;
@@ -211,6 +213,8 @@
   window.dctConfirm = confirmTable;
   window.dctUpdateStart = updateStart;
   window.dctStartNow = startNow;
+  window.dctAskKill = askKill;
+  window.dctCancelKill = cancelKill;
   window.dctKill = killTable;
   window.dctReset = () => { document.querySelectorAll('#dadmin-create-table-view input').forEach(input => input.value = ''); updateAdminSeats(); };
   window.closeDeuceAdminPass = () => $('dadmin-pass-overlay').classList.remove('show');
