@@ -6,6 +6,8 @@ const TURN_TIMEOUT_MS = 120_000;
 const DISCONNECT_GRACE_MS = 30_000;
 const LIFECYCLE_TICK_MS = 1_000;
 const BOT_TURN_DELAY_MS = 500;
+const GROUP_POPUP_MS = 10_000;   // group-match result popup, same as Play vs Computer
+const ROUND_START_MS = 12_000;   // 5-4-3-2-1 countdown + card deal before a round first turn
 
 function istDateString(now = Date.now()) {
   return new Date(now + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -91,6 +93,7 @@ class DeuceMatchManager {
     }
     await this.setStatus('live');
     await this.persist();
+    this.pauseUntil = Date.now() + ROUND_START_MS;
     this.armTurnTimer();
     this.broadcastState();
     this.maybeBotTurn();
@@ -168,7 +171,9 @@ class DeuceMatchManager {
     state.status = this.engine.gameOver ? 'ended' : 'live';
     state.matchStartedAt = this.matchStartedAt || null;
     state.turnDeadline = this.turnDeadline;
-    state.turnRemainingMs = this.turnDeadline == null ? null : Math.max(0, this.turnDeadline - Date.now());
+    state.turnRemainingMs = this.turnDeadline == null ? null : Math.max(0, Math.min(TURN_TIMEOUT_MS, this.turnDeadline - Date.now()));
+    state.pauseRemainingMs = Math.max(0, (this.pauseUntil || 0) - Date.now());
+    state.lastGroupResult = this.lastGroupResult || null;
     state.players = state.players.map(player => ({
       ...player,
       connected: this.connectedSeats.has(player.seat),
@@ -189,8 +194,9 @@ class DeuceMatchManager {
   armTurnTimer() {
     clearTimeout(this.turnTimer);
     if (!this.engine || this.engine.gameOver || this.engine.actor < 0) { this.turnDeadline = null; return; }
-    this.turnDeadline = Date.now() + TURN_TIMEOUT_MS;
-    this.turnTimer = setTimeout(() => this.timeoutTurn().catch(error => console.error('Deuce timeout failed:', error.message)), TURN_TIMEOUT_MS + 20);
+    const wait = Math.max(0, (this.pauseUntil || 0) - Date.now());
+    this.turnDeadline = Date.now() + wait + TURN_TIMEOUT_MS;
+    this.turnTimer = setTimeout(() => this.timeoutTurn().catch(error => console.error('Deuce timeout failed:', error.message)), wait + TURN_TIMEOUT_MS + 20);
   }
 
   async timeoutTurn() {
@@ -206,6 +212,7 @@ class DeuceMatchManager {
     if (!this.engine || this.engine.gameOver || this.engine.actor < 0) return;
     const seat = this.engine.actor;
     if (!this.isBotControlled(seat) || this.botTimer) return;
+    const botWait = BOT_TURN_DELAY_MS + Math.max(0, (this.pauseUntil || 0) - Date.now());
     this.botTimer = setTimeout(async () => {
       this.botTimer = null;
       try {
@@ -217,18 +224,25 @@ class DeuceMatchManager {
         } else await this.applyEngineAction(seat, 'pack', null, true);
         this.metrics.botActions += 1;
       } catch (error) { this.audit('deuce_bot_error', { seat: seat + 1, error: error.message }); }
-    }, BOT_TURN_DELAY_MS);
+    }, botWait);
   }
 
   async applyEngineAction(seat, action, value, internal = false) {
     if (!this.engine) throw new Error('The Deuce match has not started.');
     let result;
+    const roundBefore = this.engine.round;
     if (action === 'group') result = this.engine.group(seat, value);
     else if (action === 'play') result = this.engine.play(seat, value);
     else if (action === 'pack') result = this.engine.pack(seat);
     else if (action === 'timeout') result = this.engine.timeout(seat);
     else throw new Error('Unknown Deuce action.');
     this.metrics.actions += 1;
+    const groupResult = result && result.groupResult;
+    if (groupResult) {
+      this.groupResultSeq = (this.groupResultSeq || 0) + 1;
+      this.lastGroupResult = { seq: this.groupResultSeq, round: roundBefore, groupNo: groupResult.groupIndex + 1, winner: groupResult.winner, scores: groupResult.scores, entries: groupResult.entries, matchOver: !!result.gameOver, roundComplete: !!result.roundComplete };
+      this.pauseUntil = Date.now() + GROUP_POPUP_MS + (result.roundComplete ? ROUND_START_MS : 0);
+    }
     this.turnDeadline = null;
     clearTimeout(this.turnTimer); this.turnTimer = null;
     await this.persist();
@@ -248,6 +262,7 @@ class DeuceMatchManager {
     if (message.t === 'resume') { this.sendState(client); return true; }
     if (message.t !== 'deuceAction') return false;
     try {
+      if (Date.now() < (this.pauseUntil || 0)) throw new Error('Wait for the next turn to start.');
       const seat = client.seat - 1;
       if (message.action === 'group') {
         if (!Array.isArray(message.cardIds) || message.cardIds.length > 9) throw new Error('Invalid group selection.');
@@ -288,9 +303,9 @@ class DeuceMatchManager {
   }
 
   async reset() {
-    clearTimeout(this.turnTimer); clearTimeout(this.botTimer);
+    clearTimeout(this.turnTimer); clearTimeout(this.botTimer); this.turnTimer = null; this.botTimer = null;
     this.engine = null; this.started = false; this.starting = false; this.restoring = false;
-    this.matchStartedAt = 0; this.turnDeadline = null; this.connectedSeats.clear(); this.absences.clear();
+    this.matchStartedAt = 0; this.turnDeadline = null; this.connectedSeats.clear(); this.absences.clear(); this.pauseUntil = 0; this.lastGroupResult = null; this.groupResultSeq = 0;
   }
 
   async resetForNextMatch() { await this.reset(); }

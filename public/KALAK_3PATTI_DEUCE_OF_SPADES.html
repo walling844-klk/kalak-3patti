@@ -6164,6 +6164,7 @@ function avatarIndexForName(name,fallbackIdx=0){
   window.addEventListener('blur',clearDeuceDrag);
   function swapCards(g1,i1,g2,i2){
     const gp=D.players[D.viewer].groups;
+    if(D.online&&window.DEUCE_NET){const c=gp.map(g=>g?g.slice():null);const a=c[g1][i1];c[g1][i1]=c[g2][i2];c[g2][i2]=a;return window.DEUCE_NET.arrange(c)}
     if(g1===g2){[gp[g1][i1],gp[g2][i2]]=[gp[g2][i2],gp[g1][i1]];return}
     const a=gp[g1][i1],b=gp[g2][i2];gp[g1][i1]=b;gp[g2][i2]=a;
   }
@@ -6173,6 +6174,7 @@ function avatarIndexForName(name,fallbackIdx=0){
     if(!D.active||D.roundDone)return;
   }
   function groupSelectedCards(seat=D.viewer,ids=D.selectedCards){
+    if(D.online&&window.DEUCE_NET)return window.DEUCE_NET.group(ids);
     if(D.roundDone)return;
     const p=D.players[seat];if(!p||p.packed)return;
     const mine=seat===D.viewer;
@@ -6192,6 +6194,7 @@ function avatarIndexForName(name,fallbackIdx=0){
   }
   function playHumanGroup(i,seat=D.viewer){
     if(D.actor!==seat||D.roundDone)return;
+    if(D.online&&window.DEUCE_NET){D.selectedCards=[];return window.DEUCE_NET.play(i)}
     const p=D.players[seat]; if(!p.groups[i]||p.groups[i].length!==3)return;
     if(seat===D.viewer)D.selectedCards=[];
     resolvePlayerTurn(seat,i,true);
@@ -6238,6 +6241,7 @@ function avatarIndexForName(name,fallbackIdx=0){
   // Every seat (human or bot) has this action; bots simply never choose it (see botShouldPack).
   function packSeat(seat=D.viewer){
     if(!D.active||!D.dealt||D.roundDone||D.actor!==seat)return;
+    if(D.online&&window.DEUCE_NET){D.selectedCards=[];return window.DEUCE_NET.pack()}
     const p=D.players[seat];
     if(!p||p.packed||D.groupCyclePlayed.includes(seat))return;
     clearTurnTimer();if(seat===D.viewer)D.selectedCards=[];
@@ -6263,6 +6267,7 @@ function avatarIndexForName(name,fallbackIdx=0){
   // and you see exactly what that player sees. The seat you left is taken over by the bot AI.
   function viewAs(seat){
     seat=+seat;
+    if(D.online)return false;
     if(!D.players[seat]||seat===D.viewer)return false;
     if(D.players[seat].standing){toast('That seat has stood up');return false}
     if(D.active&&!D.dealt){toast('Wait for the deal to finish');return false}
@@ -6288,6 +6293,8 @@ function avatarIndexForName(name,fallbackIdx=0){
     const now=Date.now();
     if(lastSeatTap.seat===seat&&now-lastSeatTap.t<400){lastSeatTap={seat:-1,t:0};viewAs(seat)}else lastSeatTap={seat,t:now};
   });
+  function syncMatchTimer(t){if(!MT.running)startMatchTimer();MT.start=t;mtTick()}
+  window.DEUCE_UI={D,renderSeats,renderHuman,renderRanking,updateDeuceRoomInfo,updateClock,showMsg,toast,setStatus,notifyDeuceTurn,animateDealDeuceCards,sortDisplayGroup,evaluate,compareEval,esc,isExtraJoker,isJokerCard,stopMatchTimer,resetMatchTimer,syncMatchTimer,swapDeuceBrand,avatarIdx:(i,name)=>avatarIndexForName(name,DEUCE_AVATAR_IDX[i]??i)};
   window.DEUCE_API={seats:()=>D.players.map((_,i)=>seatView(i)),view:seatView,viewAs,group:groupSelectedCards,play:playHumanGroup,playBest:playHighestHumanGroup,pack:packSeat};
   function resolvePlayerTurn(i,gi,manual=false){
     if(D.roundDone||i!==D.actor)return;

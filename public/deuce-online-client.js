@@ -27,15 +27,47 @@
     if (!R.socket || R.socket.readyState !== WebSocket.OPEN) return notice('Reconnecting to the Deuce table…', true);
     R.socket.send(JSON.stringify({ t: 'deuceAction', action, ...(payload || {}) }));
   }
+  // ── Tournament table = the Play-vs-Computer table ──
+  // The server owns the game; this client only feeds each server state into the SAME table code Play vs Computer
+  // uses (seats, hand, GROUP / PLAY / PACK, turn ring, popups, deal animation) via window.DEUCE_UI.
+  const SYM = { S: '♠', H: '♥', D: '♦', C: '♣' };
+  const LAYOUT = { 2: [0, 3], 3: [0, 2, 4], 4: [0, 2, 3, 4], 5: [0, 1, 2, 4, 5], 6: [0, 1, 2, 3, 4, 5] };
+  const UI = () => window.DEUCE_UI;
+  const norm = card => card ? { ...card, suit: SYM[card.suit] || card.suit, red: card.suit === 'H' || card.suit === 'D' || card.suit === '♥' || card.suit === '♦' } : card;
+  const normGroups = groups => (groups || [null, null, null]).map(group => group ? group.map(norm) : null);
+  const NET = {
+    group(ids) {
+      if (!ids || !ids.length) return UI().showMsg('Select cards first', 1200);
+      send('group', { cardIds: ids.slice() }); UI().D.selectedCards = [];
+      UI().showMsg(`<strong>GROUPED</strong> ${ids.length} card${ids.length === 1 ? '' : 's'} in press order`, 1200);
+    },
+    play(index) { send('play', { groupIndex: index }); },
+    pack() { send('pack'); },
+    arrange(groups) { send('group', { cardIds: groups.flat().filter(Boolean).map(card => card.id) }); },
+  };
+  function clearTimers() {
+    clearInterval(R.tick); R.tick = null; clearTimeout(R.dealT); clearTimeout(R.popupT); clearInterval(R.popupI);
+    R.dealing = false;
+  }
+  function leaveOnline() { clearTimers(); closeSocket(); R.password = null; location.reload(); }
   function startRemote(result) {
     R.seat = result.kind === 'seat' ? Number(result.seat) - 1 : null;
     R.role = result.kind;
     R.password = result.password;
+    R.prev = null; R.seenSeq = null;
+    const ui = UI(), D = ui.D;
     $('deuce-overlay').style.display = 'none';
     $('deuce-game-layer').classList.add('online-deuce');
+    Object.assign(D, { online: true, active: true, viewer: R.seat == null ? 0 : R.seat, dealt: false, roundDone: false, selectedCards: [], currentGroups: [], groupCyclePlayed: [], dealVisible: 0 });
     document.body.classList.add('deuce-active');
-    if (window.DEUCE) { window.DEUCE.online = true; window.DEUCE.viewer = R.seat == null ? 0 : R.seat; }
-    const brand = $('brand-logo'); if (brand) brand.innerHTML = '<span class="brand-crown">♛</span>DEUCE <em>OF SPADES</em>';
+    ui.swapDeuceBrand();
+    const sub = document.querySelector('.deuce-watermark .dw-sub'); if (sub) sub.textContent = 'TOURNAMENT';
+    const room = $('deuce-room-info'); if (room && room.firstElementChild) room.firstElementChild.innerHTML = 'Room: <b>Tournament</b>';
+    const swap = $('deuce-seat-switch'); if (swap) swap.style.display = 'none';
+    window.DEUCE_NET = NET; window.finishDeuceMatch = leaveOnline;
+    ui.setStatus('Waiting for the tournament to start…');
+    clearInterval(R.tick);
+    R.tick = setInterval(() => { const seconds = Math.min(120, Math.max(0, Math.ceil((R.deadline - Date.now()) / 1000))); D.seconds = seconds; ui.updateClock(); }, 250);
     connectSocket();
   }
   function openJoin() { $('join-pass-input').value = ''; $('join-pass-error').style.display = 'none'; $('join-pass-overlay').classList.add('show'); setTimeout(() => $('join-pass-input').focus(), 50); }
@@ -46,42 +78,107 @@
     if (!result.ok) { if (result.status === 404) { $('join-pass-overlay').classList.remove('show'); notice(result.data.error || 'No Deuce tournament is online.', true); return; } $('join-pass-error').textContent = result.data.error || 'Incorrect password'; $('join-pass-error').style.display = 'block'; return; }
     $('join-pass-overlay').classList.remove('show'); startRemote({ ...result.data, password: value });
   }
-  function cardFromId(id) { return R.state?.players?.[R.seat]?.hand?.find(card => card.id === id); }
-  function renderRemote(state) {
-    R.state = state;
-    const players = state.players || [], count = players.length;
+  function nameOf(i) { const p = UI().D.players[i]; return p ? p.name : `Player ${i + 1}`; }
+  function showGroupPopup(state, done) {
+    const ui = UI(), r = state.lastGroupResult, popup = $('deuce-group-popup');
+    if (!popup || !r) return done();
+    $('dgmp-title').textContent = `ROUND ${r.round} GROUP ${r.groupNo} MATCH COMPLETE`;
+    $('dgmp-sub').textContent = r.matchOver ? `${nameOf(r.winner)} REACHED 9 POINTS` : r.winner == null ? 'DRAW — NO POINTS' : `${nameOf(r.winner)} WINS THIS GROUP MATCH • +1 POINT • DEALS NEXT`;
+    const rows = $('deuce-group-results'); rows.innerHTML = '';
+    r.entries.map(e => ({ ...e, group: e.group.map(norm) })).map(e => ({ ...e, eval: ui.evaluate(e.group) }))
+      .sort((a, b) => Number(a.invalid) - Number(b.invalid) || ui.compareEval(b.eval, a.eval)).forEach((x, rank) => {
+        const cards = ui.sortDisplayGroup(x.group, x.eval).map(({ source: c }) => `<span class="dr-result-card ${c.red ? 'red' : 'black'}${ui.isJokerCard(c) ? ' joker' : ''}">${ui.esc(ui.isExtraJoker(c) ? '🃏' : `${c.rank}${c.suit}`)}</span>`).join('');
+        const row = document.createElement('div'); row.className = 'dr-result';
+        row.innerHTML = `<div class="dr-result-head"><span>${rank + 1}. ${ui.esc(nameOf(x.seat))}${x.invalid ? ' — CARD INVALID' : ''}</span><b>${x.invalid ? 'CARD INVALID' : ui.esc(x.eval.name)}</b></div><div class="dr-result-cards">${cards}</div>`;
+        rows.appendChild(row);
+      });
+    popup.classList.add('show');
+    let seconds = 10; const cd = $('dgmp-countdown'); if (cd) cd.textContent = seconds;
+    clearTimeout(R.popupT); clearInterval(R.popupI);
+    const close = () => { clearTimeout(R.popupT); clearInterval(R.popupI); R.popupT = R.popupI = null; popup.classList.remove('show'); done(); };
+    R.popupI = setInterval(() => { seconds--; if (cd) cd.textContent = Math.max(0, seconds); }, 1000);
+    R.popupT = setTimeout(close, 10000);
+    window.closeDeuceGroupPopup = close;
+  }
+  function showWinner(state) {
+    const ui = UI(); ui.stopMatchTimer();
+    $('dwp-winner').textContent = `${nameOf(state.winner)} WINS THE MATCH!`;
+    $('deuce-winner-popup').classList.add('show');
+  }
+  function notifyTurn(state) {
+    const ui = UI();
+    if (R.seat == null) ui.showMsg(`<strong>${ui.esc(nameOf(state.actor)).toUpperCase()}'S TURN</strong>`, 1300);
+    else ui.notifyDeuceTurn(state.actor);
+  }
+  function runDeal(delay, state) {
+    const ui = UI(), D = ui.D;
+    R.dealing = true; D.dealt = false; D.dealVisible = 0;
+    const wrap = $('deuce-human-hand'), controls = $('deuce-human-controls'); if (wrap) wrap.innerHTML = ''; if (controls) controls.innerHTML = '';
+    ui.setStatus(`Dealing — ${nameOf(state.dealer)} is dealer…`);
+    let n = 5;
+    const finish = () => {
+      const box = $('deuce-message'); if (box) box.classList.remove('show', 'match-countdown');
+      ui.animateDealDeuceCards(() => { R.dealing = false; D.dealt = true; D.dealVisible = 9; paint(R.state); notifyTurn(R.state); ui.toast(`Dealer: ${nameOf(R.state.dealer)}`); });
+    };
+    const tick = () => {
+      if (n <= 0) return finish();
+      ui.showMsg(`<strong>ROUND ${state.round} STARTS IN</strong><br><span style="font-size:2.1rem">${n}</span>`, 1100);
+      n--; R.dealT = setTimeout(tick, 900);
+    };
+    clearTimeout(R.dealT); R.dealT = setTimeout(tick, delay);
+  }
+  // Server state → the same D fields Play vs Computer keeps locally, then the same render functions.
+  function paint(state) {
+    const ui = UI(), D = ui.D, count = state.players.length;
+    D.players = Array.from({ length: 6 }, (_, i) => {
+      const sp = state.players[i];
+      if (!sp) return { name: `Player ${i + 1}`, score: 0, hand: [], groups: [null, null, null], played: [], packed: false, standing: true, avatarIdx: 0 };
+      const mine = i === R.seat, name = mine ? 'YOU' : (sp.name || `Player ${i + 1}`);
+      return { name, score: sp.score || 0, hand: [], groups: mine ? normGroups(sp.groups) : [null, null, null], played: [false, false, false],
+        group2Invalid: !!sp.group2Invalid, group3Blocked: !!sp.group3Blocked, packed: !!sp.packed, bot: !mine,
+        avatarIdx: (D.avatarChoice && D.avatarChoice[i] != null) ? D.avatarChoice[i] : ui.avatarIdx(i, sp.name || `Player ${i + 1}`) };
+    });
+    D.hand = state.hand || 1; D.round = state.round || 1; D.dealer = state.dealer; D.actor = state.actor; D.currentGroupIndex = state.currentGroupIndex;
+    D.currentGroups = []; D.groupCyclePlayed = [];
+    state.players.forEach((sp, i) => {
+      if (sp.current?.group?.length) { const group = sp.current.group.map(norm); D.currentGroups[i] = { group, eval: ui.evaluate(group), invalid: !!sp.current.invalid, gi: sp.current.groupIndex }; D.groupCyclePlayed.push(i); }
+      else if (sp.packed) D.groupCyclePlayed.push(i);
+    });
+    D.roundDone = !!state.gameOver;
+    if (!R.dealing) { D.dealt = true; D.dealVisible = 9; }
+    ui.renderSeats();
+    const layout = LAYOUT[count] || LAYOUT[6];
     for (let i = 0; i < 6; i++) {
-      const player = players[i]; const seat = $(`deuce-seat-${i}`); if (!seat) continue;
-      seat.style.display = player ? '' : 'none';
-      if (!player) continue;
-      $(`ds-name-${i}`).textContent = player.name || `Player ${i + 1}`;
-      $(`ds-score-${i}`).textContent = `${player.score || 0} pts`;
-      $(`ds-dealer-${i}`).style.display = i === state.dealer ? 'inline-block' : 'none';
-      const groups = $(`ds-groups-${i}`); groups.innerHTML = '';
-      if (player.current?.group?.length) player.current.group.forEach(card => { const mini = document.createElement('span'); mini.className = `ds-mini-card ${card.red ? 'red' : 'black'}${card.joker ? ' joker' : ''}`; mini.textContent = cardLabel(card); groups.appendChild(mini); });
-      else if (player.packed) groups.innerHTML = '<div class="ds-packed">PACKED</div>';
-      else if (i !== R.seat) groups.innerHTML = '<div class="ds-back"></div><div class="ds-back"></div><div class="ds-back"></div>';
-      seat.classList.toggle('active', i === state.actor && !state.gameOver); seat.classList.toggle('packed', !!player.packed); seat.classList.toggle('me', i === R.seat);
+      const seat = $(`deuce-seat-${i}`); if (!seat) continue;
+      if (i >= count) { seat.style.display = 'none'; continue; }
+      seat.style.display = ''; seat.dataset.pos = String(layout[(i - D.viewer + count) % count]);
     }
     const room = $('deuce-room-info'); if (room) room.querySelector('.players-count').textContent = `👥 ${count}/${count}`;
-    $('deuce-room-round').textContent = state.round || 1; $('deuce-round-no').textContent = state.round || 1; $('deuce-hand-no').textContent = state.currentGroupIndex + 1;
-    const clock = $('deuce-time'); if (clock) clock.textContent = Math.ceil((state.turnRemainingMs || 0) / 1000);
-    const mine = R.seat == null ? null : players[R.seat];
-    renderHand(mine, state);
-    const actorName = players[state.actor]?.name || 'PLAYER';
-    $('deuce-status').textContent = state.gameOver ? `Match complete — ${players[state.winner]?.name || 'winner'} wins.` : state.actor === R.seat ? 'Your turn — select a group, arrange cards, or pack.' : `${actorName}'s turn…`;
-    if (state.gameOver) notice(`Congratulations ${players[state.winner]?.name || 'winner'} — you reached 9 points.`);
+    $('deuce-round-no').textContent = D.round; $('deuce-hand-no').textContent = D.hand;
+    ui.updateDeuceRoomInfo(); ui.renderRanking();
+    if (R.seat == null) { $('deuce-human-hand').innerHTML = '<div class="online-observer-note" style="color:#ead9b8;text-align:center;letter-spacing:1px">You are observing this Deuce tournament.</div>'; $('deuce-human-controls').innerHTML = ''; }
+    else ui.renderHuman();
+    if (!R.dealing) ui.setStatus(state.gameOver ? `Match complete — ${nameOf(state.winner)} wins.` : state.actor === R.seat ? 'Your turn — choose one 3-card group.' : `${nameOf(state.actor)}'s turn…`);
+    ui.updateClock();
   }
-  function renderHand(player, state) {
-    const hand = $('deuce-human-hand'), controls = $('deuce-human-controls'); if (!hand || !controls) return;
-    if (!player || R.seat == null) { hand.innerHTML = '<div class="online-observer-note">You are observing this Deuce tournament.</div>'; controls.innerHTML = ''; return; }
-    const groups = player.groups || [];
-    hand.innerHTML = `<div class="online-hand-title">YOUR CARDS — choose a group to play</div><div class="online-groups">${groups.map((group, index) => `<div class="online-group"><div class="online-group-title">GROUP ${index + 1}${player.group3Blocked && index === 2 ? ' — FORFEITED' : ''}</div><div class="online-group-cards">${(group || []).map(card => cardHTML(card, R.selected.has(card.id))).join('')}</div><button type="button" class="deuce-play-btn primary online-play-group" data-group-index="${index}" ${state.actor !== R.seat || !group || player.group3Blocked && index === 2 ? 'disabled' : ''}>PLAY GROUP ${index + 1}</button></div>`).join('')}</div>`;
-    controls.innerHTML = `<button type="button" class="deuce-play-btn" id="online-group-selected" ${R.selected.size ? '' : 'disabled'}>GROUP SELECTED CARDS</button><button type="button" class="deuce-play-btn danger" id="online-pack" ${state.actor === R.seat && !player.packed ? '' : 'disabled'}>PACK</button>`;
-    hand.querySelectorAll('[data-online-card]').forEach(node => node.addEventListener('click', () => { const id = node.dataset.onlineCard; R.selected.has(id) ? R.selected.delete(id) : R.selected.add(id); renderHand(R.state.players[R.seat], R.state); }));
-    hand.querySelectorAll('.online-play-group').forEach(node => node.addEventListener('click', () => { R.selected.clear(); send('play', { groupIndex: Number(node.dataset.groupIndex) }); }));
-    $('online-group-selected')?.addEventListener('click', () => { if (R.selected.size) { send('group', { cardIds: [...R.selected] }); R.selected.clear(); } });
-    $('online-pack')?.addEventListener('click', () => { R.selected.clear(); send('pack'); });
+  function renderRemote(state) {
+    const ui = UI(), D = ui.D;
+    if (!state.players || !state.players.length) { ui.setStatus('Waiting for the tournament to start…'); return; }
+    const prev = R.prev, seq = state.lastGroupResult ? state.lastGroupResult.seq : 0, pause = state.pauseRemainingMs || 0;
+    const newResult = R.seenSeq != null && seq > R.seenSeq;
+    const dealNow = prev ? state.round !== prev.round : pause > 0 && !seq;
+    R.seenSeq = seq; R.state = state;
+    R.deadline = Date.now() + pause + (state.turnRemainingMs == null ? 120000 : state.turnRemainingMs);
+    if (state.matchStartedAt) ui.syncMatchTimer(state.matchStartedAt + 12000);
+    if (prev && !dealNow) state.players.forEach((sp, i) => { if (sp.packed && !prev.packed[i] && !newResult) ui.showMsg(i === R.seat ? '<strong>YOU PACKED</strong> — sitting out this round' : `<strong>${ui.esc(sp.name || 'PLAYER').toUpperCase()} PACKED</strong>`, 1500); });
+    const turnChanged = !prev || prev.actor !== state.actor || dealNow;
+    R.prev = { round: state.round, actor: state.actor, packed: state.players.map(p => !!p.packed) };
+    if (dealNow) R.dealing = true;
+    paint(state);
+    let delay = 0;
+    if (newResult) { delay = 10000; showGroupPopup(state, () => { if (state.gameOver) showWinner(state); else if (!dealNow && turnChanged && !state.gameOver) notifyTurn(R.state); }); }
+    if (dealNow && !state.gameOver) runDeal(delay, state);
+    else if (!newResult && turnChanged && prev && !state.gameOver) notifyTurn(state);
   }
   function onMessage(message) { if (message.t === 'deuceState') renderRemote(message); else if (message.t === 'error') notice(message.error || 'Action rejected.', true); else if (message.t === 'denied') { closeSocket(); notice(message.error || 'You no longer have access to this table.', true); } }
 

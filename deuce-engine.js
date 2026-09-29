@@ -324,7 +324,7 @@ class DeuceEngine {
       gameOver: this.gameOver, winner: this.winner,
       players: this.players.map(player => ({
         seat: player.seat, name: player.name, score: player.score, packed: player.packed, group2Invalid: player.group2Invalid, group3Blocked: player.group3Blocked,
-        current: player.current ? { group: player.current.group.map(cloneCard), eval: scrubEval(player.current.eval), groupIndex: player.current.groupIndex, invalid: !!player.current.invalid } : null,
+        current: this.currentGroups[player.seat] ? { group: this.currentGroups[player.seat].group.map(cloneCard), eval: scrubEval(this.currentGroups[player.seat].eval), groupIndex: this.currentGroups[player.seat].groupIndex, invalid: !!this.currentGroups[player.seat].invalid } : null,
         hand: viewSeat === player.seat ? player.hand.map(cloneCard) : null,
         groups: viewSeat === player.seat ? player.groups.map(group => group ? group.map(cloneCard) : null) : null,
         actions: viewSeat === player.seat && !this.gameOver && !player.packed && player.seat === this.actor ? { group: true, play: this.availableGroupIndices(player), pack: true } : undefined,
