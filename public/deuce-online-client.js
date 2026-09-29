@@ -72,7 +72,7 @@
     R.tick = setInterval(() => { const seconds = Math.min(120, Math.max(0, Math.ceil((R.deadline - Date.now()) / 1000))); D.seconds = seconds; ui.updateClock(); }, 250);
     connectSocket();
   }
-  function openJoin() { $('join-pass-input').value = ''; $('join-pass-error').style.display = 'none'; $('join-pass-overlay').classList.add('show'); setTimeout(() => $('join-pass-input').focus(), 50); }
+  function openJoin() { $('join-pass-input').value = ''; $('join-pass-error').style.display = 'none'; $('btn-join-pass-submit').onclick = submitJoin; $('join-pass-overlay').classList.add('show'); setTimeout(() => $('join-pass-input').focus(), 50); }
   async function submitJoin() {
     const value = $('join-pass-input').value.trim(); if (!value) return;
     const btn = $('btn-join-pass-submit'); btn.disabled = true;
@@ -207,7 +207,7 @@
   async function killTable() { const yes = $('btn-dct-kill-yes'); yes.disabled = true; const result = await api('/api/deuce/admin/table/kill', { adminPassword: R.adminPassword }); if (!result.ok) { yes.disabled = false; return notice(result.data.error || 'Could not kill the table.', true); } R.adminConfig = null; cancelKill(); refreshAdmin(null); $('dadmin-panel-overlay').classList.remove('show'); notice('Deuce table killed.'); }
 
   window.openDeuceJoinTournament = openJoin;
-  window.submitJoinPass = submitJoin;
+  window.submitDeuceJoinPass = submitJoin;
   window.openDeuceAdminPanel = openAdmin;
   window.submitDeuceAdminPass = submitAdmin;
   window.showDeuceAdminView = showAdminView;

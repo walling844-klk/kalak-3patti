@@ -5353,6 +5353,7 @@ let joinTableInfo=null;                            // table settings the server 
 function openJoinTournament(){
   document.getElementById('join-pass-input').value='';
   document.getElementById('join-pass-error').style.display='none';
+  document.getElementById('btn-join-pass-submit').onclick=submitJoinPass;
   document.getElementById('join-pass-overlay').classList.add('show');
   setTimeout(()=>document.getElementById('join-pass-input').focus(),50);
 }
