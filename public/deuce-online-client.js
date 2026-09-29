@@ -1,6 +1,13 @@
 /* Online Deuce tournament client. Loaded inline by the Deuce page. */
 (function () {
   'use strict';
+  // Only run the Deuce tournament code on the Deuce of Spades page (the only page that defines window.DEUCE_UI).
+  // The Kalak 3PATTI page also loads this file: there it changes nothing about Kalak's own JOIN / ADMIN buttons and keys.
+  // Its only job on that page is to send the DEUCE OF SPADES folder over to the separate Deuce page at /deuce.
+  if (!window.DEUCE_UI) { window.openDeuceFolder = () => { location.href = '/deuce'; }; return; }
+  // On the Deuce page: the TEENPATTI folder goes back to the Kalak page at /, and the page opens straight on the Deuce menu.
+  window.openTeenpattiFolder = () => { location.href = '/'; };
+  if (typeof window.openDeuceFolder === 'function') window.openDeuceFolder();
   const R = { password: null, seat: null, role: null, socket: null, reconnect: null, state: null, selected: new Set(), adminPassword: null, adminConfig: null };
   const $ = id => document.getElementById(id);
   const esc = value => String(value == null ? '' : value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -75,7 +82,7 @@
   function openJoin() { $('join-pass-input').value = ''; $('join-pass-error').style.display = 'none'; $('btn-join-pass-submit').onclick = submitJoin; $('join-pass-overlay').classList.add('show'); setTimeout(() => $('join-pass-input').focus(), 50); }
   async function submitJoin() {
     const value = $('join-pass-input').value.trim(); if (!value) return;
-    const btn = $('btn-join-pass-submit'); btn.disabled = true;
+    const btn = $('btn-join-pass-submit'); if (btn.disabled) return; btn.disabled = true;
     const result = await api('/api/deuce/join', { password: value }); btn.disabled = false;
     if (!result.ok) { if (result.status === 404) { $('join-pass-overlay').classList.remove('show'); notice(result.data.error || 'No Deuce tournament is online.', true); return; } $('join-pass-error').textContent = result.data.error || 'Incorrect password'; $('join-pass-error').style.display = 'block'; return; }
     $('join-pass-overlay').classList.remove('show'); startRemote({ ...result.data, password: value });
@@ -222,7 +229,14 @@
   window.dctReset = () => { document.querySelectorAll('#dadmin-create-table-view input').forEach(input => input.value = ''); updateAdminSeats(); };
   window.closeDeuceAdminPass = () => $('dadmin-pass-overlay').classList.remove('show');
   window.closeDeuceAdminPanelView = () => $('dadmin-panel-overlay').classList.remove('show');
-  $('join-pass-input')?.addEventListener('keydown', event => { if (event.key === 'Enter') submitJoin(); });
+  // The Deuce page still carries a copy of Kalak's join box and its Enter-key handler (which calls /api/join, Kalak's table).
+  // Catch Enter first, at document level, so only the Deuce join runs and nothing is ever sent to Kalak's table.
+  document.addEventListener('keydown', event => {
+    if (event.key !== 'Enter' || !event.target || event.target.id !== 'join-pass-input') return;
+    event.stopImmediatePropagation(); event.preventDefault();
+    if (!event.repeat) submitJoin();
+  }, true);
+  window.submitJoinPass = submitJoin;             // on this page the join box always means the Deuce tournament
   $('dadmin-pass-input')?.addEventListener('keydown', event => { if (event.key === 'Enter') submitAdmin(); });
   document.addEventListener('visibilitychange', () => { if (!document.hidden && R.password && (!R.socket || R.socket.readyState !== WebSocket.OPEN)) connectSocket(); });
 })();
