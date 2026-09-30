@@ -470,7 +470,14 @@ app.post('/api/deuce/admin/table/start', wrap(async (req, res) => {
   const matchStartTime = b.matchStartTime == null ? '' : b.matchStartTime;
   if (!validDate(matchStartDate)) return res.status(400).json({ error: 'Deuce match start date must be a real date.' });
   if (!validTime(matchStartTime)) return res.status(400).json({ error: 'Deuce match start time is not valid.' });
-  await commitDeuce({ ...DEUCE_CONFIG, matchStartDate, matchStartTime });
+  // Same as Kalak: once a match has ended, setting a new start time gets the table ready for the next match.
+  const matchEnded = DEUCE_CONFIG.status === 'ended' || Boolean(DEUCE_CONFIG.result);
+  const { result: _previousResult, status: _previousStatus, ...tableConfig } = DEUCE_CONFIG;
+  if (matchEnded && deuceManager) {
+    await deuceManager.resetForNextMatch();
+    await deuceManager.deleteStoredSnapshot();
+  }
+  await commitDeuce(matchEnded ? { ...tableConfig, matchStartDate, matchStartTime } : { ...DEUCE_CONFIG, matchStartDate, matchStartTime });
   if (deuceRealtime) deuceRealtime.broadcastLobby(DEUCE_CONFIG);
   res.json({ ok: true, config: DEUCE_CONFIG });
 }));
@@ -495,6 +502,7 @@ app.post('/api/deuce/join', async (req, res) => {
     const player = DEUCE_CONFIG.players.find(candidate => candidate.type === 'human' && safeEqual(candidate.password, password));
     if (player) {
       if (player.kicked) return res.status(403).json({ error: 'You have been removed from the Deuce tournament.', kicked: true });
+      if (deuceManager?.isSeatExited(player.seat)) return res.status(403).json({ error: 'This player has exited the Deuce tournament and cannot rejoin this match.', exited: true });
       return res.json({ kind: 'seat', seat: player.seat, name: player.name, tableInfo, status: DEUCE_CONFIG.status, ...(DEUCE_CONFIG.result ? { ended: true, winner: DEUCE_CONFIG.result.winner } : {}) });
     }
     if (DEUCE_CONFIG.observerPassword && safeEqual(DEUCE_CONFIG.observerPassword, password)) return res.json({ kind: 'observer', tableInfo, status: DEUCE_CONFIG.status, ...(DEUCE_CONFIG.result ? { ended: true, winner: DEUCE_CONFIG.result.winner } : {}) });
@@ -572,8 +580,8 @@ deuceRealtime = new RealtimeServer({
   recordFailure: ip => recordFailure(ip),
   onAuthenticated: client => { if (deuceManager) deuceManager.register(client); },
   onClose: client => { if (deuceManager) deuceManager.unregister(client); },
-  onLeave: () => {},
-  isSeatExited: () => false,
+  onLeave: client => { if (deuceManager) deuceManager.markExited(client); },
+  isSeatExited: seat => deuceManager?.isSeatExited(seat) || false,
   onMessage: (message, client) => deuceManager ? deuceManager.handleMessage(message, client) : false,
 });
 deuceManager = new DeuceMatchManager({

@@ -144,6 +144,7 @@ class DeuceEngine {
     this.seats = seats;
     this.names = Array.from({ length: seats }, (_, i) => String(names[i] || `Player${i + 1}`));
     this.computerSeats = new Set(computerSeats.map(Number));
+    this.removedSeats = new Set();                // seats the admin removed from the table: they sit out for the rest of the match
     this.deckFactory = deckFactory;
     this.fixedDeck = deck;
     this.round = 0;
@@ -159,7 +160,17 @@ class DeuceEngine {
   }
 
   newPlayer(seat) {
-    return { seat, name: this.names[seat], score: 0, hand: [], groups: [], played: [], current: null, packed: false, group2Invalid: false, group3Blocked: false };
+    return { seat, name: this.names[seat], score: 0, hand: [], groups: [], played: [], current: null, packed: false, group2Invalid: false, group3Blocked: false, removed: false };
+  }
+
+  activeSeats() { return this.players.filter(player => !this.removedSeats.has(player.seat)).map(player => player.seat); }
+  canPlay(seat) { const player = this.players[seat]; return !!player && !this.removedSeats.has(seat) && !player.packed && this.availableGroupIndices(player).length > 0; }
+  // A group match starts with every seat that cannot play in it already counted as done: removed seats, packed seats and
+  // seats whose group 3 was forfeited (their group 2 beat their group 1). The group is decided once everyone else has played.
+  freshCycle() { return new Set(this.players.map(player => player.seat).filter(seat => !this.canPlay(seat))); }
+  nextActiveAfter(from) {
+    for (let offset = 1; offset <= this.seats; offset++) { const seat = (from + offset) % this.seats; if (!this.removedSeats.has(seat)) return seat; }
+    return -1;
   }
 
   startRound() {
@@ -168,8 +179,9 @@ class DeuceEngine {
     this.currentGroupIndex = 0;
     this.currentGroups = Array.from({ length: this.seats }, () => null);
     this.groupCyclePlayed = new Set();
+    const active = this.activeSeats();
     const deck = this.fixedDeck ? this.fixedDeck.map(cloneCard) : this.deckFactory();
-    if (deck.length < this.seats * CARDS_PER_PLAYER) throw new Error('Not enough cards to deal.');
+    if (deck.length < active.length * CARDS_PER_PLAYER) throw new Error('Not enough cards to deal.');
     this.players.forEach(player => {
       player.hand = [];
       player.groups = [];
@@ -180,12 +192,16 @@ class DeuceEngine {
       player.group3Blocked = false;
     });
     for (let cardIndex = 0; cardIndex < CARDS_PER_PLAYER; cardIndex++) {
-      for (let seat = 0; seat < this.seats; seat++) this.players[seat].hand.push(deck[cardIndex * this.seats + seat]);
+      active.forEach((seat, position) => this.players[seat].hand.push(deck[cardIndex * active.length + position]));
     }
+    for (const seat of this.removedSeats) { const gone = this.players[seat]; gone.packed = true; gone.groups = [null, null, null]; }
     for (const player of this.players) {
+      if (this.removedSeats.has(player.seat)) continue;
       player.groups = this.computerSeats.has(player.seat) ? bestPartition(player.hand) : [player.hand.slice(0, 3), player.hand.slice(3, 6), player.hand.slice(6, 9)];
     }
-    this.actor = (this.dealer + 1) % this.seats;
+    this.groupCyclePlayed = this.freshCycle();
+    if (this.removedSeats.has(this.dealer)) this.dealer = this.nextActiveAfter(this.dealer);
+    this.actor = this.nextActiveAfter(this.dealer);
     return this.state();
   }
 
@@ -251,9 +267,7 @@ class DeuceEngine {
       }
     }
     this.groupCyclePlayed.add(seat);
-    if (this.groupCyclePlayed.size === this.seats) return this.resolveGroupMatch();
-    this.advanceActor();
-    return this.state();
+    return this.finishTurn();
   }
 
   pack(seat) {
@@ -262,9 +276,7 @@ class DeuceEngine {
     player.groups = [null, null, null];
     player.played = [{ group: [], eval: null, groupIndex: 0 }, { group: [], eval: null, groupIndex: 1 }, { group: [], eval: null, groupIndex: 2 }];
     this.groupCyclePlayed.add(seat);
-    if (this.groupCyclePlayed.size === this.seats) return this.resolveGroupMatch();
-    this.advanceActor();
-    return this.state();
+    return this.finishTurn();
   }
 
   timeout(seat) {
@@ -274,13 +286,42 @@ class DeuceEngine {
     return this.play(seat, available[0]);
   }
 
-  advanceActor() {
+  // The admin kicked this seat: it leaves the game for good (its cards are gone, it is skipped in every turn and deal).
+  // If that leaves fewer than two seats at the table, the match ends and the seat that is left wins.
+  removeSeat(seat) {
+    const player = this.assertSeat(seat);
+    if (this.removedSeats.has(seat)) return this.state();
+    this.removedSeats.add(seat);
+    player.removed = true; player.packed = true; player.hand = []; player.groups = [null, null, null]; player.played = []; player.current = null;
+    this.currentGroups[seat] = null;
+    if (this.gameOver) return this.state();
+    const active = this.activeSeats();
+    if (active.length <= 1) {
+      this.gameOver = true; this.winner = active.length ? active[0] : null; this.actor = -1;
+      return { ...this.state(), gameOver: true, winner: this.winner };
+    }
+    this.groupCyclePlayed.add(seat);
+    if (this.actor < 0) return this.state();                       // not dealt yet - nothing else to do
+    if (this.actor === seat || this.groupCyclePlayed.size >= this.seats) return this.finishTurn();   // it was their turn, or everyone else had already played
+    return this.state();
+  }
+
+  nextToAct() {
     for (let offset = 1; offset <= this.seats; offset++) {
       const next = (this.actor + offset) % this.seats;
-      const player = this.players[next];
-      if (!this.groupCyclePlayed.has(next) && !player.packed && this.availableGroupIndices(player).length) { this.actor = next; return; }
+      if (!this.groupCyclePlayed.has(next) && this.canPlay(next)) return next;
     }
-    throw new Error('No playable player remains.');
+    return -1;
+  }
+
+  // Called after a seat has played or packed. The group match is decided as soon as every seat that CAN play it has played;
+  // it never waits for a seat that has nothing left to play (a forfeited group 3, a packed or removed seat).
+  finishTurn() {
+    if (this.groupCyclePlayed.size >= this.seats) return this.resolveGroupMatch();
+    const next = this.nextToAct();
+    if (next < 0) return this.resolveGroupMatch();
+    this.actor = next;
+    return this.state();
   }
 
   resolveGroupMatch() {
@@ -305,7 +346,11 @@ class DeuceEngine {
     }
     this.currentGroupIndex += 1;
     this.currentGroups = Array.from({ length: this.seats }, () => null);
-    this.groupCyclePlayed = new Set();
+    this.groupCyclePlayed = this.freshCycle();
+    if (this.groupCyclePlayed.size >= this.seats) {                 // nobody can play this group (all forfeited / packed): nothing to decide
+      const onward = this.resolveGroupMatch();
+      return { ...onward, groupResult: result };                    // players keep seeing the last real group result
+    }
     this.actor = this.nextPlayableSeat(this.dealer);
     return { ...this.state(), groupResult: result };
   }
@@ -323,7 +368,7 @@ class DeuceEngine {
       round: this.round, hand: this.hand, dealer: this.dealer, actor: this.actor, currentGroupIndex: this.currentGroupIndex,
       gameOver: this.gameOver, winner: this.winner,
       players: this.players.map(player => ({
-        seat: player.seat, name: player.name, score: player.score, packed: player.packed, group2Invalid: player.group2Invalid, group3Blocked: player.group3Blocked,
+        seat: player.seat, name: player.name, score: player.score, packed: player.packed, removed: !!player.removed, group2Invalid: player.group2Invalid, group3Blocked: player.group3Blocked,
         current: this.currentGroups[player.seat] ? { group: this.currentGroups[player.seat].group.map(cloneCard), eval: scrubEval(this.currentGroups[player.seat].eval), groupIndex: this.currentGroups[player.seat].groupIndex, invalid: !!this.currentGroups[player.seat].invalid } : null,
         hand: viewSeat === player.seat ? player.hand.map(cloneCard) : null,
         groups: viewSeat === player.seat ? player.groups.map(group => group ? group.map(cloneCard) : null) : null,
@@ -336,7 +381,7 @@ class DeuceEngine {
     return {
       seats: this.seats, names: this.names.slice(), computerSeats: [...this.computerSeats], round: this.round, hand: this.hand,
       dealer: this.dealer, actor: this.actor, currentGroupIndex: this.currentGroupIndex, gameOver: this.gameOver, winner: this.winner,
-      groupCyclePlayed: [...this.groupCyclePlayed], currentGroups: this.currentGroups,
+      groupCyclePlayed: [...this.groupCyclePlayed], removedSeats: [...this.removedSeats], currentGroups: this.currentGroups,
       players: this.players,
     };
   }
@@ -350,6 +395,7 @@ class DeuceEngine {
     engine.groupCyclePlayed = new Set(snapshot.groupCyclePlayed || []);
     engine.currentGroups = snapshot.currentGroups || Array.from({ length: engine.seats }, () => null);
     engine.players = snapshot.players;
+    engine.removedSeats = new Set(Array.isArray(snapshot.removedSeats) ? snapshot.removedSeats.map(Number) : snapshot.players.filter(player => player.removed).map(player => player.seat));
     return engine;
   }
 }

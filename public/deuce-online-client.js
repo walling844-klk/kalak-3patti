@@ -58,12 +58,86 @@
     clearInterval(R.tick); R.tick = null; clearTimeout(R.dealT); clearTimeout(R.popupT); clearInterval(R.popupI);
     R.dealing = false;
   }
-  function leaveOnline() { clearTimers(); closeSocket(); R.password = null; location.reload(); }
+  function leaveOnline() { R.leaving = true; clearTimers(); closeSocket(); R.password = null; location.reload(); }
+  // EXIT TABLE while playing in the tournament: tell the server (so the seat is locked for the rest of this match, exactly like
+  // Kalak), then drop the connection and return to a fresh Deuce menu. Observers just disconnect - they hold no seat.
+  function exitOnline() {
+    R.leaving = true; clearTimers();
+    const socket = R.socket, isSeat = R.role === 'seat';
+    R.password = null;                                // no automatic reconnect from here on
+    let finished = false;
+    const finish = () => { if (finished) return; finished = true; closeSocket(); location.reload(); };
+    if (isSeat && socket && socket.readyState === WebSocket.OPEN) {
+      socket.onmessage = event => { try { if (JSON.parse(event.data).t === 'left') finish(); } catch (_) {} };
+      socket.onclose = finish;
+      try { socket.send(JSON.stringify({ t: 'leave' })); } catch (_) { return finish(); }
+      setTimeout(finish, 1500);                       // never get stuck if the server does not answer
+    } else finish();
+  }
+  // ── Waiting screen: before the admin's start time a player sees the SAME "YOU'RE SEATED" holding screen (table details +
+  // live countdown) that the Kalak 3PATTI tournament shows - not an empty card table. The game table opens by itself when the
+  // server starts the match. The screen re-appears if the admin resets the table for a second match. ──
+  const IST_MS = 5.5 * 3600 * 1000;
+  function startMs(info) {
+    if (!info || (!info.matchStartDate && !info.matchStartTime)) return null;
+    const date = info.matchStartDate || new Date(Date.now() + IST_MS).toISOString().slice(0, 10);   // date left empty = today (IST)
+    let time = info.matchStartTime || '00:00'; if (time.length === 5) time += ':00';
+    const t = Date.parse(`${date}T${time}+05:30`); return isNaN(t) ? null : t;
+  }
+  function clock12(hhmm) { const [h, m] = String(hhmm).split(':').map(Number); const d = new Date(); d.setHours(h, m || 0, 0, 0); return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); }
+  function startText(info) { return [isoToDmy(info.matchStartDate), info.matchStartTime ? `${clock12(info.matchStartTime)} IST` : ''].filter(Boolean).join(', '); }
+  function countdownText(ms) {
+    const total = Math.max(0, Math.floor(ms / 1000)), two = n => String(n).padStart(2, '0');
+    const d = Math.floor(total / 86400), h = Math.floor(total % 86400 / 3600), m = Math.floor(total % 3600 / 60), sec = total % 60;
+    return `${d > 0 ? `${d}d ` : ''}${two(h)}:${two(m)}:${two(sec)}`;
+  }
+  function tickWaiting() {
+    const box = $('join-wait'); if (!box || !R.waiting) return;
+    const start = startMs(R.tableInfo), left = start === null ? 0 : start - Date.now();
+    box.innerHTML = left > 0 ? `<div class="join-waiting-note">Waiting for the match to start in</div><div id="join-countdown">${countdownText(left)}</div>` : '<div class="join-waiting-note">Waiting for the match to start…</div>';
+  }
+  function renderWaiting() {
+    const info = R.tableInfo || {};
+    $('join-seated-title').textContent = R.role === 'seat' ? "YOU'RE SEATED" : 'OBSERVING';
+    $('join-seated-sub').textContent = R.role === 'seat' ? `Seat ${R.seat + 1} — ${R.name || ''}` : 'Watching only — no seat assigned';
+    const rows = [`<div><b>Game:</b> Deuce of Spades · first to 9 points</div>`, `<div><b>Table:</b> ${esc(info.numPlayers)} seats</div>`];
+    if (info.matchStartDate || info.matchStartTime) rows.push(`<div><b>Starts:</b> ${esc(startText(info))}</div>`);
+    rows.push('<div id="join-wait"></div>');
+    $('join-seated-details').innerHTML = rows.join('');
+    tickWaiting();
+  }
+  function showWaiting() {
+    R.waiting = true;
+    $('btn-join-seated-leave').onclick = leaveWaiting;                                  // replace the Kalak page's own handlers
+    $('join-seated-overlay').onclick = event => { if (event.target === $('join-seated-overlay')) leaveWaiting(); };
+    renderWaiting();
+    $('join-seated-overlay').classList.add('show');
+    clearInterval(R.waitT); R.waitT = setInterval(tickWaiting, 1000);
+  }
+  function hideWaiting() { R.waiting = false; clearInterval(R.waitT); R.waitT = null; $('join-seated-overlay').classList.remove('show'); }
+  // LEAVE on this screen just dismisses it (no seat is used up yet), exactly like Kalak.
+  function leaveWaiting() { R.leaving = true; hideWaiting(); clearTimers(); closeSocket(); R.password = null; location.reload(); }
+  document.addEventListener('keydown', event => { if (event.key === 'Escape' && R.waiting) { event.stopImmediatePropagation(); leaveWaiting(); } }, true);
+  // The admin readied the table for ANOTHER match: drop the finished one and wait for the next start, like the first time.
+  function backToWaiting() {
+    clearTimeout(R.dealT); clearTimeout(R.popupT); clearInterval(R.popupI); R.dealing = false;      // (the clock keeps running)
+    const winner = $('deuce-winner-popup'); if (winner) winner.classList.remove('show');
+    R.prev = null; R.seenSeq = null; R.state = null;
+    showWaiting();
+  }
   function startRemote(result) {
     R.seat = result.kind === 'seat' ? Number(result.seat) - 1 : null;
-    R.role = result.kind;
+    R.role = result.kind; R.name = result.name;
     R.password = result.password;
-    R.prev = null; R.seenSeq = null;
+    R.tableInfo = result.tableInfo || {};
+    R.prev = null; R.seenSeq = null; R.inGame = false;
+    window.DEUCE_NET = NET; window.finishDeuceMatch = leaveOnline;
+    if (!result.status || result.status === 'waiting') showWaiting(); else enterGame();     // joined a match that is already running -> straight to the table
+    connectSocket();
+  }
+  function enterGame() {
+    if (R.inGame) return;
+    R.inGame = true; hideWaiting();
     const ui = UI(), D = ui.D;
     $('deuce-overlay').style.display = 'none';
     $('deuce-game-layer').classList.add('online-deuce');
@@ -73,11 +147,9 @@
     const sub = document.querySelector('.deuce-watermark .dw-sub'); if (sub) sub.textContent = 'TOURNAMENT';
     const room = $('deuce-room-info'); if (room && room.firstElementChild) room.firstElementChild.innerHTML = 'Room: <b>Tournament</b>';
     const swap = $('deuce-seat-switch'); if (swap) swap.style.display = 'none';
-    window.DEUCE_NET = NET; window.finishDeuceMatch = leaveOnline;
     ui.setStatus('Waiting for the tournament to start…');
     clearInterval(R.tick);
     R.tick = setInterval(() => { const seconds = Math.min(120, Math.max(0, Math.ceil((R.deadline - Date.now()) / 1000))); D.seconds = seconds; ui.updateClock(); }, 250);
-    connectSocket();
   }
   function openJoin() { $('join-pass-input').value = ''; $('join-pass-error').style.display = 'none'; $('btn-join-pass-submit').onclick = submitJoin; $('join-pass-overlay').classList.add('show'); setTimeout(() => $('join-pass-input').focus(), 50); }
   async function submitJoin() {
@@ -144,10 +216,12 @@
       if (!sp) return { name: `Player ${i + 1}`, score: 0, hand: [], groups: [null, null, null], played: [], packed: false, standing: true, avatarIdx: 0 };
       const mine = i === R.seat, name = mine ? 'YOU' : (sp.name || `Player ${i + 1}`);
       return { name, score: sp.score || 0, hand: [], groups: mine ? normGroups(sp.groups) : [null, null, null], played: [false, false, false],
-        group2Invalid: !!sp.group2Invalid, group3Blocked: !!sp.group3Blocked, packed: !!sp.packed, bot: !mine,
+        group2Invalid: !!sp.group2Invalid, group3Blocked: !!sp.group3Blocked, packed: !!sp.packed, standing: !!sp.removed, bot: !mine,
         avatarIdx: (D.avatarChoice && D.avatarChoice[i] != null) ? D.avatarChoice[i] : ui.avatarIdx(i, sp.name || `Player ${i + 1}`) };
     });
-    D.hand = state.hand || 1; D.round = state.round || 1; D.dealer = state.dealer; D.actor = state.actor; D.currentGroupIndex = state.currentGroupIndex;
+    D.hand = state.hand || 1; D.round = state.round || 1; D.actor = state.actor;
+    D.dealer = state.dealer; for (let hop = 0; hop < count && state.players[D.dealer]?.removed; hop++) D.dealer = (D.dealer + 1) % count;   // a kicked seat can't wear the DEALER badge
+     D.currentGroupIndex = state.currentGroupIndex;
     D.currentGroups = []; D.groupCyclePlayed = [];
     state.players.forEach((sp, i) => {
       if (sp.current?.group?.length) { const group = sp.current.group.map(norm); D.currentGroups[i] = { group, eval: ui.evaluate(group), invalid: !!sp.current.invalid, gi: sp.current.groupIndex }; D.groupCyclePlayed.push(i); }
@@ -162,7 +236,7 @@
       if (i >= count) { seat.style.display = 'none'; continue; }
       seat.style.display = ''; seat.dataset.pos = String(layout[(i - D.viewer + count) % count]);
     }
-    const room = $('deuce-room-info'); if (room) room.querySelector('.players-count').textContent = `👥 ${count}/${count}`;
+    const room = $('deuce-room-info'); if (room) room.querySelector('.players-count').textContent = `👥 ${state.players.filter(p => !p.removed).length}/${count}`;
     $('deuce-round-no').textContent = D.round; $('deuce-hand-no').textContent = D.hand;
     ui.updateDeuceRoomInfo(); ui.renderRanking();
     if (R.seat == null) { $('deuce-human-hand').innerHTML = '<div class="online-observer-note" style="color:#ead9b8;text-align:center;letter-spacing:1px">You are observing this Deuce tournament.</div>'; $('deuce-human-controls').innerHTML = ''; }
@@ -179,7 +253,7 @@
     R.seenSeq = seq; R.state = state;
     R.deadline = Date.now() + pause + (state.turnRemainingMs == null ? 120000 : state.turnRemainingMs);
     if (state.matchStartedAt) ui.syncMatchTimer(state.matchStartedAt + 12000);
-    if (prev && !dealNow) state.players.forEach((sp, i) => { if (sp.packed && !prev.packed[i] && !newResult) ui.showMsg(i === R.seat ? '<strong>YOU PACKED</strong> — sitting out this round' : `<strong>${ui.esc(sp.name || 'PLAYER').toUpperCase()} PACKED</strong>`, 1500); });
+    if (prev && !dealNow) state.players.forEach((sp, i) => { if (sp.packed && !sp.removed && !prev.packed[i] && !newResult) ui.showMsg(i === R.seat ? '<strong>YOU PACKED</strong> — sitting out this round' : `<strong>${ui.esc(sp.name || 'PLAYER').toUpperCase()} PACKED</strong>`, 1500); });
     const turnChanged = !prev || prev.actor !== state.actor || dealNow;
     R.prev = { round: state.round, actor: state.actor, packed: state.players.map(p => !!p.packed) };
     if (dealNow) R.dealing = true;
@@ -189,7 +263,26 @@
     if (dealNow && !state.gameOver) runDeal(delay, state);
     else if (!newResult && turnChanged && prev && !state.gameOver) notifyTurn(state);
   }
-  function onMessage(message) { if (message.t === 'deuceState') renderRemote(message); else if (message.t === 'error') notice(message.error || 'Action rejected.', true); else if (message.t === 'denied') { closeSocket(); notice(message.error || 'You no longer have access to this table.', true); } }
+  function onMessage(message) {
+    if (message.t === 'deuceState') {
+      const started = !!(message.players && message.players.length);
+      if (started) { if (!R.inGame) enterGame(); else if (R.waiting) hideWaiting(); }       // the match began: the waiting screen gives way to the table
+      else if (R.inGame && !R.waiting && !R.leaving) backToWaiting();                       // table was reset for another match: wait for it like Kalak does
+      renderRemote(message);
+    }
+    else if (message.t === 'lobby') {
+      if (message.tableInfo) R.tableInfo = message.tableInfo;
+      if (R.inGame && !R.waiting && !R.leaving && message.status === 'waiting') backToWaiting();   // table reset for the next match
+      else if (R.waiting) renderWaiting();                                                          // admin changed the start time
+    }
+    else if (message.t === 'error') notice(message.error || 'Action rejected.', true);
+    else if (message.t === 'denied') {
+      const wasWaiting = R.waiting, text = message.error || 'You no longer have access to this table.';
+      closeSocket();
+      if (wasWaiting) { hideWaiting(); R.password = null; if (typeof window.showComingSoon === 'function') window.showComingSoon('JOIN TOURNAMENT', text); else notice(text, true); }   // table killed / seat removed while waiting
+      else notice(text, true);
+    }
+  }
 
   function populateAdmin(config) {
     if (!config) return;
@@ -206,7 +299,7 @@
   function openAdmin() { $('dadmin-pass-input').value = ''; $('dadmin-pass-error').style.display = 'none'; $('dadmin-pass-overlay').classList.add('show'); setTimeout(() => $('dadmin-pass-input').focus(), 50); }
   async function submitAdmin() { const password = $('dadmin-pass-input').value; const result = await api('/api/admin/login', { password }); if (!result.ok) { $('dadmin-pass-error').textContent = result.data.error || 'Incorrect password'; $('dadmin-pass-error').style.display = 'block'; return; } R.adminPassword = password; $('dadmin-pass-overlay').classList.remove('show'); $('dadmin-panel-overlay').classList.add('show'); showAdminView('menu'); }
   function showAdminView(view) { const menu = view === 'menu'; $('dadmin-menu-view').style.display = menu ? '' : 'none'; $('dadmin-create-table-view').style.display = menu ? 'none' : ''; $('dadmin-panel-title').textContent = menu ? 'ADMIN PANEL' : 'CREATE TABLE'; if (!menu) loadAdmin(); }
-  async function confirmTable() { const n = Number($('dct-num-players').value); const players = []; for (let seat = 1; seat <= n; seat++) players.push({ seat, name: $(`dct-name-${seat}`).value.trim() || `Player${seat}`, password: $(`dct-pw-${seat}`).value.trim() || String(seat), type: $(`dct-type-${seat}`).value === 'computer' ? 'computer' : 'human' }); const body = { adminPassword: R.adminPassword, config: { numPlayers: n, players, observerPassword: $('dct-observer-pw').value.trim() || 'abc', matchStartDate: normalizeDate($('dct-start-date').value), matchStartTime: $('dct-start-time').value || '' } }; const result = await api('/api/deuce/admin/table', body); if (!result.ok) return notice(result.data.error || 'Could not create table.', true); populateAdmin(result.data.config); refreshAdmin(result.data.config); notice('Deuce tournament table is online.'); }
+  async function confirmTable() { const n = Number($('dct-num-players').value); const players = []; for (let seat = 1; seat <= n; seat++) players.push({ seat, name: $(`dct-name-${seat}`).value.trim() || `Player${seat}`, password: $(`dct-pw-${seat}`).value.trim() || String(seat), type: $(`dct-type-${seat}`).value === 'computer' ? 'computer' : 'human' }); const body = { adminPassword: R.adminPassword, config: { numPlayers: n, players, observerPassword: $('dct-observer-pw').value.trim() || 'abc', matchStartDate: normalizeDate($('dct-start-date').value), matchStartTime: $('dct-start-time').value || '' } }; const result = await api('/api/deuce/admin/table', body); if (!result.ok) return notice(result.data.error || 'Could not create table.', true); populateAdmin(result.data.config); refreshAdmin(result.data.config); $('dct-online').scrollIntoView?.({ block: 'end' }); notice('Deuce tournament table is online.'); }   // scroll down so TABLE IS ONLINE + the Kill button are on screen, like Kalak
   async function updateStart() { const result = await api('/api/deuce/admin/table/start', { adminPassword: R.adminPassword, matchStartDate: normalizeDate($('dct-edit-date').value), matchStartTime: $('dct-edit-time').value || '' }); if (!result.ok) return notice(result.data.error, true); populateAdmin(result.data.config); refreshAdmin(result.data.config); }
   async function startNow() { const result = await api('/api/deuce/admin/table/start-now', { adminPassword: R.adminPassword }); if (!result.ok) return notice(result.data.error, true); populateAdmin(result.data.config); refreshAdmin(result.data.config); }
   function askKill() { $('btn-dct-kill').style.display = 'none'; $('dct-kill-confirm').style.display = 'block'; $('dct-kill-confirm').scrollIntoView?.({ block: 'end' }); }
@@ -237,6 +330,11 @@
     if (!event.repeat) submitJoin();
   }, true);
   window.submitJoinPass = submitJoin;             // on this page the join box always means the Deuce tournament
+  const baseExitTable = window.exitTable;         // the Deuce page's own Exit Table, still used for PLAY VS COMPUTER
+  window.exitTable = function () {
+    if (UI().D.online && R.role) return exitOnline();
+    return typeof baseExitTable === 'function' ? baseExitTable.apply(this, arguments) : undefined;
+  };
   $('dadmin-pass-input')?.addEventListener('keydown', event => { if (event.key === 'Enter') submitAdmin(); });
   document.addEventListener('visibilitychange', () => { if (!document.hidden && R.password && (!R.socket || R.socket.readyState !== WebSocket.OPEN)) connectSocket(); });
 })();

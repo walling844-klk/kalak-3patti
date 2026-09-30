@@ -41,6 +41,7 @@ class DeuceMatchManager {
     this.botTimer = null;
     this.connectedSeats = new Set();
     this.absences = new Map();
+    this.exitedSeats = new Set();                 // seats whose player pressed Exit Table: locked out of this match for good
     this.metrics = { actions: 0, timeouts: 0, botActions: 0, reconnects: 0 };
     this.lifecycleTimer = setInterval(() => this.lifecycleTick().catch(error => console.error('Deuce lifecycle failed:', error.message)), LIFECYCLE_TICK_MS);
     this.lifecycleTimer.unref();
@@ -82,6 +83,7 @@ class DeuceMatchManager {
     const names = Array.from({ length: config.numPlayers }, (_, index) => config.players[index]?.name || `Player${index + 1}`);
     const computerSeats = (config.players || []).filter(player => player.type === 'computer' && !player.kicked).map(player => player.seat - 1);
     this.engine = new DeuceEngine({ seats: config.numPlayers, names, computerSeats });
+    for (const player of config.players || []) if (player.kicked) this.engine.removeSeat(player.seat - 1);
     this.engine.startMatch();
     this.started = true;
     this.starting = false;
@@ -107,6 +109,7 @@ class DeuceMatchManager {
     if (!snapshot || !config || config.status === 'ended') { this.restoring = false; return false; }
     this.engine = DeuceEngine.restore(snapshot.engine || snapshot);
     this.matchStartedAt = Number(snapshot.matchStartedAt) || 0;
+    this.exitedSeats = new Set(Array.isArray(snapshot.exitedSeats) ? snapshot.exitedSeats.map(Number).filter(Number.isInteger) : []);
     this.started = true;
     const now = Date.now();
     for (const seat of this.humanSeats(config)) this.absences.set(seat, { seat, disconnectedAt: now, botEligibleAt: now + DISCONNECT_GRACE_MS, botControlled: false, connected: false });
@@ -120,6 +123,7 @@ class DeuceMatchManager {
   register(client) {
     if (client.role !== 'player' || client.seat == null) return;
     const seat = client.seat - 1;
+    if (this.exitedSeats.has(seat)) return;
     this.connectedSeats.add(seat);
     const absence = this.absences.get(seat);
     if (absence) { this.metrics.reconnects += 1; this.absences.delete(seat); this.audit('deuce_player_returned', { seat: client.seat }); }
@@ -132,6 +136,7 @@ class DeuceMatchManager {
     const seat = client.seat - 1;
     if (this.realtime?.sessions?.get(client.seat) && this.realtime.sessions.get(client.seat) !== client) return;
     this.connectedSeats.delete(seat);
+    if (this.engine?.removedSeats?.has(seat)) return;             // kicked by the admin: no absence timer, no bot
     if (this.started && this.engine && !this.engine.gameOver) {
       const now = Date.now();
       const current = this.absences.get(seat) || { seat, disconnectedAt: now, botEligibleAt: now + DISCONNECT_GRACE_MS, botControlled: false };
@@ -237,6 +242,12 @@ class DeuceMatchManager {
     else if (action === 'timeout') result = this.engine.timeout(seat);
     else throw new Error('Unknown Deuce action.');
     this.metrics.actions += 1;
+    await this.settle(result, roundBefore);
+    return result;
+  }
+
+  // Everything that follows a change to the engine: group result popup, save, end of match, next turn timer, broadcast.
+  async settle(result, roundBefore) {
     const groupResult = result && result.groupResult;
     if (groupResult) {
       this.groupResultSeq = (this.groupResultSeq || 0) + 1;
@@ -247,15 +258,16 @@ class DeuceMatchManager {
     clearTimeout(this.turnTimer); this.turnTimer = null;
     await this.persist();
     if (this.engine.gameOver) {
-      await this.setStatus('ended', { winner: this.engine.winner + 1, name: this.engine.players[this.engine.winner].name, score: this.engine.players[this.engine.winner].score });
+      const champion = this.engine.players[this.engine.winner];
+      await this.setStatus('ended', champion ? { winner: this.engine.winner + 1, name: champion.name, score: champion.score } : { winner: null, name: '', score: 0 });
       this.broadcastState();
-      return result;
+      return;
     }
     this.armTurnTimer();
     this.broadcastState();
     this.maybeBotTurn();
-    return result;
   }
+
 
   async handleMessage(message, client) {
     if (!client || client.role !== 'player' || client.seat == null) return false;
@@ -282,7 +294,7 @@ class DeuceMatchManager {
 
   async persist() {
     if (!this.engine) return;
-    await this.saveSnapshot({ engine: this.engine.snapshot(), matchStartedAt: this.matchStartedAt });
+    await this.saveSnapshot({ engine: this.engine.snapshot(), matchStartedAt: this.matchStartedAt, exitedSeats: [...this.exitedSeats] });
   }
 
   async adminState() {
@@ -294,23 +306,44 @@ class DeuceMatchManager {
     };
   }
 
+  // Admin kick: same result as Kalak - the player is removed from the game (no bot is left in the seat, the seat is skipped
+  // for the rest of the match). If only one seat is left at the table the match ends and that seat wins.
   async adminKick(seat) {
     const index = Number(seat) - 1;
-    if (!this.engine || !this.engine.players[index]) return;
-    const player = this.engine.players[index];
-    if (!player.packed && this.engine.actor === index) await this.applyEngineAction(index, 'pack', null, true);
-    this.broadcastState();
+    this.absences.delete(index);
+    this.connectedSeats.delete(index);
+    if (!this.engine || !this.engine.players[index] || this.engine.removedSeats.has(index)) return false;
+    const roundBefore = this.engine.round;
+    let result;
+    try { result = this.engine.removeSeat(index); } catch (error) { this.audit('deuce_kick_error', { seat: Number(seat), error: error.message }); return false; }
+    this.audit('deuce_admin_kick', { seat: Number(seat) });
+    clearTimeout(this.botTimer); this.botTimer = null;
+    await this.settle(result, roundBefore);
+    return true;
   }
 
   async reset() {
     clearTimeout(this.turnTimer); clearTimeout(this.botTimer); this.turnTimer = null; this.botTimer = null;
     this.engine = null; this.started = false; this.starting = false; this.restoring = false;
-    this.matchStartedAt = 0; this.turnDeadline = null; this.connectedSeats.clear(); this.absences.clear(); this.pauseUntil = 0; this.lastGroupResult = null; this.groupResultSeq = 0;
+    this.matchStartedAt = 0; this.turnDeadline = null; this.connectedSeats.clear(); this.absences.clear(); this.exitedSeats.clear(); this.pauseUntil = 0; this.lastGroupResult = null; this.groupResultSeq = 0;
   }
 
-  async resetForNextMatch() { await this.reset(); }
+  async resetForNextMatch() {
+    const connectedPlayers = [...(this.realtime?.clients || [])].filter(client => client.authenticated && client.role === 'player' && client.seat != null);
+    await this.reset();
+    for (const client of connectedPlayers) this.connectedSeats.add(client.seat - 1);
+  }
   async deleteStoredSnapshot() { await this.deleteSnapshot(); }
-  isSeatExited() { return false; }
+  // A player pressed Exit Table (the client sent 'leave'): their seat is locked for the rest of this match, same as Kalak.
+  markExited(client) {
+    if (client?.role !== 'player' || client.seat == null) return;
+    const seat = Number(client.seat) - 1;
+    this.exitedSeats.add(seat);
+    this.connectedSeats.delete(seat);
+    this.audit('deuce_player_exited', { seat: seat + 1 });
+    if (this.engine) this.persist().catch(error => console.error('Deuce exit lock persistence failed:', error.message));
+  }
+  isSeatExited(seat) { return this.exitedSeats.has(Number(seat) - 1); }
   getMetrics() { return { ...this.metrics, started: this.started, round: this.engine?.round || 0, actor: this.engine?.actor == null ? null : this.engine.actor + 1 }; }
 
   close() { clearInterval(this.lifecycleTimer); this.reset(); }
