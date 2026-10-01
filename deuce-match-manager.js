@@ -42,6 +42,7 @@ class DeuceMatchManager {
     this.connectedSeats = new Set();
     this.absences = new Map();
     this.exitedSeats = new Set();                 // seats whose player pressed Exit Table: locked out of this match for good
+    this.avatars = new Map();                     // seat -> avatar index the player picked (everyone at the table sees it)
     this.metrics = { actions: 0, timeouts: 0, botActions: 0, reconnects: 0 };
     this.lifecycleTimer = setInterval(() => this.lifecycleTick().catch(error => console.error('Deuce lifecycle failed:', error.message)), LIFECYCLE_TICK_MS);
     this.lifecycleTimer.unref();
@@ -82,7 +83,7 @@ class DeuceMatchManager {
     const playable = this.playableSeats(config);
     const names = Array.from({ length: config.numPlayers }, (_, index) => config.players[index]?.name || `Player${index + 1}`);
     const computerSeats = (config.players || []).filter(player => player.type === 'computer' && !player.kicked).map(player => player.seat - 1);
-    this.engine = new DeuceEngine({ seats: config.numPlayers, names, computerSeats });
+    this.engine = new DeuceEngine({ seats: config.numPlayers, names, computerSeats, firstDealer: Math.floor(Math.random() * config.numPlayers) });   // random first dealer, like Play vs Computer
     for (const player of config.players || []) if (player.kicked) this.engine.removeSeat(player.seat - 1);
     this.engine.startMatch();
     this.started = true;
@@ -110,6 +111,7 @@ class DeuceMatchManager {
     this.engine = DeuceEngine.restore(snapshot.engine || snapshot);
     this.matchStartedAt = Number(snapshot.matchStartedAt) || 0;
     this.exitedSeats = new Set(Array.isArray(snapshot.exitedSeats) ? snapshot.exitedSeats.map(Number).filter(Number.isInteger) : []);
+    this.avatars = new Map(Array.isArray(snapshot.avatars) ? snapshot.avatars.filter(entry => Array.isArray(entry) && Number.isInteger(entry[0]) && Number.isInteger(entry[1])) : []);
     this.started = true;
     const now = Date.now();
     for (const seat of this.humanSeats(config)) this.absences.set(seat, { seat, disconnectedAt: now, botEligibleAt: now + DISCONNECT_GRACE_MS, botControlled: false, connected: false });
@@ -184,6 +186,7 @@ class DeuceMatchManager {
       connected: this.connectedSeats.has(player.seat),
       absent: this.absences.has(player.seat),
       botControlled: this.isBotControlled(player.seat),
+      avatar: this.avatars.has(player.seat) ? this.avatars.get(player.seat) : null,
     }));
     return state;
   }
@@ -239,7 +242,12 @@ class DeuceMatchManager {
     if (action === 'group') result = this.engine.group(seat, value);
     else if (action === 'play') result = this.engine.play(seat, value);
     else if (action === 'pack') result = this.engine.pack(seat);
-    else if (action === 'timeout') result = this.engine.timeout(seat);
+    else if (action === 'timeout') {
+      // Tell the table what happened (the offline game shows the same toast): who ran out of time and which group was played for them.
+      const timedOut = this.engine.players[seat], options = this.engine.availableGroupIndices(timedOut);
+      if (!this.isBotControlled(seat)) this.broadcastNotice(options.length ? `${this.engine.names[seat]} timed out — Group ${options[0] + 1} played` : `${this.engine.names[seat]} timed out — packed`);
+      result = this.engine.timeout(seat);
+    }
     else throw new Error('Unknown Deuce action.');
     this.metrics.actions += 1;
     await this.settle(result, roundBefore);
@@ -269,13 +277,47 @@ class DeuceMatchManager {
   }
 
 
+  // A short on-screen message for everybody at the table (a toast), e.g. "Ann timed out — Group 2 played".
+  broadcastNotice(text, exceptSeat = null) {
+    for (const client of this.realtime?.clients || []) {
+      if (!client.authenticated || (exceptSeat != null && client.role === 'player' && client.seat - 1 === exceptSeat)) continue;
+      this.realtime.send(client, { t: 'deuceNotice', text });
+    }
+  }
+
+  // STAND UP (same rules as Play vs Computer): the player gives up their seat for the rest of the match and watches from the side.
+  // They are never dealt in again, never get a turn and never deal; at least two players must always stay at the table.
+  async standUp(seat) {
+    if (!this.engine || this.engine.gameOver) throw new Error('The match is not running.');
+    if (!this.engine.players[seat] || this.engine.removedSeats.has(seat)) throw new Error("You're already watching the table.");
+    if (this.engine.activeSeats().length <= 2) throw new Error('At least two players must stay at the table.');
+    const roundBefore = this.engine.round;
+    const result = this.engine.removeSeat(seat);
+    this.absences.delete(seat);
+    clearTimeout(this.botTimer); this.botTimer = null;
+    this.audit('deuce_player_stood_up', { seat: seat + 1 });
+    this.broadcastNotice(`${this.engine.names[seat]} stood up — watching now`, seat);
+    await this.settle(result, roundBefore);
+    return true;
+  }
+
+  setAvatar(seat, index) {
+    const value = Number(index);
+    if (!Number.isInteger(value) || value < 0 || value > 99) throw new Error('Invalid avatar.');
+    this.avatars.set(seat, value);
+    if (this.engine) this.persist().catch(error => console.error('Deuce avatar persistence failed:', error.message));
+    this.broadcastState();
+  }
+
   async handleMessage(message, client) {
     if (!client || client.role !== 'player' || client.seat == null) return false;
     if (message.t === 'resume') { this.sendState(client); return true; }
     if (message.t !== 'deuceAction') return false;
     try {
-      if (Date.now() < (this.pauseUntil || 0)) throw new Error('Wait for the next turn to start.');
       const seat = client.seat - 1;
+      if (message.action === 'standUp') { await this.standUp(seat); return true; }                 // allowed at any moment of the match
+      if (message.action === 'avatar') { this.setAvatar(seat, message.index); return true; }
+      if (Date.now() < (this.pauseUntil || 0)) throw new Error('Wait for the next turn to start.');
       if (message.action === 'group') {
         if (!Array.isArray(message.cardIds) || message.cardIds.length > 9) throw new Error('Invalid group selection.');
         await this.applyEngineAction(seat, 'group', message.cardIds);
@@ -294,7 +336,7 @@ class DeuceMatchManager {
 
   async persist() {
     if (!this.engine) return;
-    await this.saveSnapshot({ engine: this.engine.snapshot(), matchStartedAt: this.matchStartedAt, exitedSeats: [...this.exitedSeats] });
+    await this.saveSnapshot({ engine: this.engine.snapshot(), matchStartedAt: this.matchStartedAt, exitedSeats: [...this.exitedSeats], avatars: [...this.avatars] });
   }
 
   async adminState() {
@@ -325,12 +367,14 @@ class DeuceMatchManager {
   async reset() {
     clearTimeout(this.turnTimer); clearTimeout(this.botTimer); this.turnTimer = null; this.botTimer = null;
     this.engine = null; this.started = false; this.starting = false; this.restoring = false;
-    this.matchStartedAt = 0; this.turnDeadline = null; this.connectedSeats.clear(); this.absences.clear(); this.exitedSeats.clear(); this.pauseUntil = 0; this.lastGroupResult = null; this.groupResultSeq = 0;
+    this.matchStartedAt = 0; this.turnDeadline = null; this.connectedSeats.clear(); this.absences.clear(); this.exitedSeats.clear(); this.avatars.clear(); this.pauseUntil = 0; this.lastGroupResult = null; this.groupResultSeq = 0;
   }
 
   async resetForNextMatch() {
     const connectedPlayers = [...(this.realtime?.clients || [])].filter(client => client.authenticated && client.role === 'player' && client.seat != null);
+    const avatars = new Map(this.avatars);                        // the same people are still at the table: they keep their avatars
     await this.reset();
+    this.avatars = avatars;
     for (const client of connectedPlayers) this.connectedSeats.add(client.seat - 1);
   }
   async deleteStoredSnapshot() { await this.deleteSnapshot(); }

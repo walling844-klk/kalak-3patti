@@ -139,12 +139,13 @@ function scrubEval(result) {
 }
 
 class DeuceEngine {
-  constructor({ seats = SEATS, names = [], computerSeats = [], deckFactory = makeDeck, deck = null } = {}) {
+  constructor({ seats = SEATS, names = [], computerSeats = [], deckFactory = makeDeck, deck = null, firstDealer = 0 } = {}) {
     if (!Number.isInteger(seats) || seats < 2 || seats > SEATS) throw new Error('Deuce supports 2 to 6 seats.');
     this.seats = seats;
     this.names = Array.from({ length: seats }, (_, i) => String(names[i] || `Player${i + 1}`));
     this.computerSeats = new Set(computerSeats.map(Number));
-    this.removedSeats = new Set();                // seats the admin removed from the table: they sit out for the rest of the match
+    this.removedSeats = new Set();                // seats that left the game (admin kick or Stand Up): they sit out for the rest of the match
+    this.firstDealer = Number.isInteger(firstDealer) && firstDealer >= 0 && firstDealer < seats ? firstDealer : 0;
     this.deckFactory = deckFactory;
     this.fixedDeck = deck;
     this.round = 0;
@@ -210,7 +211,7 @@ class DeuceEngine {
     this.hand = 1;
     this.gameOver = false;
     this.winner = null;
-    this.dealer = 0;
+    this.dealer = this.firstDealer;
     this.players.forEach(player => { player.score = 0; });
     return this.startRound();
   }

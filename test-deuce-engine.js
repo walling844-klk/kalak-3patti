@@ -260,4 +260,21 @@ function best(e, seat) {
   }
 }
 
+// ── First dealer ──────────────────────────────────────────────────────────────────────────────────────────────────────
+{
+  const e = new DeuceEngine({ seats: 4, firstDealer: 2, computerSeats: [0, 1, 2, 3], deckFactory: () => makeDeck(() => 0) });
+  e.startMatch();
+  assert.equal(e.dealer, 2, 'the chosen first dealer deals');
+  assert.equal(e.actor, 3, 'the seat after the dealer plays first');
+  const defaults = new DeuceEngine({ seats: 3, computerSeats: [0, 1, 2], deckFactory: () => makeDeck(() => 0) });
+  defaults.startMatch();
+  assert.equal(defaults.dealer, 0, 'engine default stays seat 1 (the server picks a random one)');
+  const gone = new DeuceEngine({ seats: 4, firstDealer: 1, computerSeats: [0, 1, 2, 3], deckFactory: () => makeDeck(() => 0) });
+  gone.removeSeat(1); gone.startMatch();
+  assert.notEqual(gone.dealer, 1, 'a seat that already left cannot be the first dealer');
+  assert.equal(gone.removedSeats.has(gone.actor), false);
+  const bad = new DeuceEngine({ seats: 3, firstDealer: 9 });
+  assert.equal(bad.firstDealer, 0, 'an impossible dealer falls back to seat 1');
+}
+
 console.log('Deuce engine tests passed');
