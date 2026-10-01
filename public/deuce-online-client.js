@@ -5,6 +5,24 @@
   // The Kalak 3PATTI page also loads this file: there it changes nothing about Kalak's own JOIN / ADMIN buttons and keys.
   // Its only job on that page is to send the DEUCE OF SPADES folder over to the separate Deuce page at /deuce.
   if (!window.DEUCE_UI) { window.openDeuceFolder = () => { location.href = '/deuce'; }; return; }
+  // Play vs Computer: the winner screen's button goes back to the Deuce of Spades menu (it no longer starts another match).
+  // (Once a tournament seat is joined this is replaced by leaving the tournament - see startRemote.)
+  window.finishDeuceMatch = function () {
+    const ui = window.DEUCE_UI; ui.resetMatchTimer();
+    const popup = document.getElementById('deuce-winner-popup'); if (popup) popup.classList.remove('show');
+    if (typeof window.exitTable === 'function') window.exitTable();
+  };
+  // Stand Up: offline it is handled by the page; in the tournament room the SERVER removes the seat (so nobody waits on a player who left).
+  const pageMenuStandUp = window.menuStandUp;
+  window.menuStandUp = function () {
+    const ui = window.DEUCE_UI, D = ui.D;
+    if (!D.online) return typeof pageMenuStandUp === 'function' ? pageMenuStandUp.apply(this, arguments) : undefined;
+    if (typeof window.closeMenu === 'function') window.closeMenu();
+    const mine = D.players[D.viewer];
+    if (R.role !== 'seat' || !mine || mine.standing) return ui.toast("You're already watching the table");
+    if (D.players.filter(p => !p.standing).length <= 2) return ui.toast('At least two players must stay at the table');
+    NET.standUp();
+  };
   // On the Deuce page: the TEENPATTI folder goes back to the Kalak page at /, and the page opens straight on the Deuce menu.
   window.openTeenpattiFolder = () => { location.href = '/'; };
   if (typeof window.openDeuceFolder === 'function') window.openDeuceFolder();
@@ -52,6 +70,7 @@
     },
     play(index) { send('play', { groupIndex: index }); },
     pack() { send('pack'); },
+    standUp() { send('standUp'); },
     arrange(groups) { send('group', { cardIds: groups.flat().filter(Boolean).map(card => card.id) }); },
   };
   function clearTimers() {
@@ -147,6 +166,23 @@
     const sub = document.querySelector('.deuce-watermark .dw-sub'); if (sub) sub.textContent = 'TOURNAMENT';
     const room = $('deuce-room-info'); if (room && room.firstElementChild) room.firstElementChild.innerHTML = 'Room: <b>Tournament</b>';
     const swap = $('deuce-seat-switch'); if (swap) swap.style.display = 'none';
+    // Points panel: only the seats that really exist (no phantom "Player 4/5/6") and no leftover "Accumulated Boot" line.
+    const boot = document.querySelector('#deuce-ranking .dr-boot'); if (boot) boot.style.display = 'none';
+    const rankRows = $('deuce-ranking-rows');
+    if (rankRows && !R.rankObserver) {
+      R.rankObserver = new MutationObserver(() => {
+        if (R.tidying || !UI().D.online) return; R.tidying = true;
+        const list = UI().D.players.map((p, i) => ({ p, i })).filter(x => !x.p.phantom).sort((a, b) => b.p.score - a.p.score || a.i - b.i);
+        rankRows.innerHTML = '';
+        list.forEach((x, idx) => { const row = document.createElement('div'); row.className = 'dr-row' + (x.i === UI().D.viewer ? ' you' : ''); row.innerHTML = `<div class="dr-rank">${idx + 1}</div><div>${UI().esc(x.p.name)}</div><div class="dr-points">${x.p.score}</div>`; rankRows.appendChild(row); });
+        R.rankObserver.takeRecords();                    // forget the changes made just now, or this would trigger itself forever
+        R.tidying = false;
+      });
+      R.rankObserver.observe(rankRows, { childList: true });
+    }
+    // Avatars: when the player confirms a new avatar (the page already applied it on their own screen) tell the server, so everyone sees it.
+    const avatarYes = $('deuce-btn-avatar-yes');
+    if (avatarYes && !R.avatarHooked) { R.avatarHooked = true; avatarYes.addEventListener('click', () => { const D = UI().D; const choice = D.avatarChoice && D.avatarChoice[D.viewer]; if (D.online && R.seat != null && choice != null) send('avatar', { index: choice }); }); }
     ui.setStatus('Waiting for the tournament to start…');
     clearInterval(R.tick);
     R.tick = setInterval(() => { const seconds = Math.min(120, Math.max(0, Math.ceil((R.deadline - Date.now()) / 1000))); D.seconds = seconds; ui.updateClock(); }, 250);
@@ -213,11 +249,11 @@
     const ui = UI(), D = ui.D, count = state.players.length;
     D.players = Array.from({ length: 6 }, (_, i) => {
       const sp = state.players[i];
-      if (!sp) return { name: `Player ${i + 1}`, score: 0, hand: [], groups: [null, null, null], played: [], packed: false, standing: true, avatarIdx: 0 };
+      if (!sp) return { name: `Player ${i + 1}`, score: 0, hand: [], groups: [null, null, null], played: [], packed: false, standing: true, phantom: true, avatarIdx: 0 };
       const mine = i === R.seat, name = mine ? 'YOU' : (sp.name || `Player ${i + 1}`);
       return { name, score: sp.score || 0, hand: [], groups: mine ? normGroups(sp.groups) : [null, null, null], played: [false, false, false],
         group2Invalid: !!sp.group2Invalid, group3Blocked: !!sp.group3Blocked, packed: !!sp.packed, standing: !!sp.removed, bot: !mine,
-        avatarIdx: (D.avatarChoice && D.avatarChoice[i] != null) ? D.avatarChoice[i] : ui.avatarIdx(i, sp.name || `Player ${i + 1}`) };
+        avatarIdx: sp.avatar != null ? sp.avatar : (D.avatarChoice && D.avatarChoice[i] != null) ? D.avatarChoice[i] : ui.avatarIdx(i, sp.name || `Player ${i + 1}`) };
     });
     D.hand = state.hand || 1; D.round = state.round || 1; D.actor = state.actor;
     D.dealer = state.dealer; for (let hop = 0; hop < count && state.players[D.dealer]?.removed; hop++) D.dealer = (D.dealer + 1) % count;   // a kicked seat can't wear the DEALER badge
@@ -254,6 +290,9 @@
     R.deadline = Date.now() + pause + (state.turnRemainingMs == null ? 120000 : state.turnRemainingMs);
     if (state.matchStartedAt) ui.syncMatchTimer(state.matchStartedAt + 12000);
     if (prev && !dealNow) state.players.forEach((sp, i) => { if (sp.packed && !sp.removed && !prev.packed[i] && !newResult) ui.showMsg(i === R.seat ? '<strong>YOU PACKED</strong> — sitting out this round' : `<strong>${ui.esc(sp.name || 'PLAYER').toUpperCase()} PACKED</strong>`, 1500); });
+    const me = R.seat != null ? state.players[R.seat] : null;
+    if (me && me.removed) { if (!R.stood && prev) { ui.showMsg("<strong>YOU STOOD UP</strong> — you're watching now", 2200); ui.toast("You stood up — you're watching now."); } R.stood = true; ui.setStatus("You stood up — you're watching the table now."); }
+    else R.stood = false;
     const turnChanged = !prev || prev.actor !== state.actor || dealNow;
     R.prev = { round: state.round, actor: state.actor, packed: state.players.map(p => !!p.packed) };
     if (dealNow) R.dealing = true;
@@ -275,6 +314,7 @@
       if (R.inGame && !R.waiting && !R.leaving && message.status === 'waiting') backToWaiting();   // table reset for the next match
       else if (R.waiting) renderWaiting();                                                          // admin changed the start time
     }
+    else if (message.t === 'deuceNotice') { if (R.inGame && message.text) UI().toast(String(message.text).slice(0, 120)); }
     else if (message.t === 'error') notice(message.error || 'Action rejected.', true);
     else if (message.t === 'denied') {
       const wasWaiting = R.waiting, text = message.error || 'You no longer have access to this table.';
