@@ -23,6 +23,34 @@
     if (D.players.filter(p => !p.standing).length <= 2) return ui.toast('At least two players must stay at the table');
     NET.standUp();
   };
+  // Compact "GROUP MATCH COMPLETE" result popup (Play vs Computer AND the tournament room use the same popup).
+  // Every player's result is one short row - name + hand on the left, the three cards on the right - and the countdown and CONTINUE
+  // sit on one line underneath, so all six results fit on small phones without scrolling. On wide-and-short screens (a phone held
+  // sideways) the rows split into two columns.
+  (function compactResultPopup() {
+    if (document.getElementById('deuce-compact-results')) return;
+    const style = document.createElement('style'); style.id = 'deuce-compact-results';
+    style.textContent = `
+      #deuce-group-popup .deuce-popup-box{width:min(94%,400px);max-height:calc(100% - 12px);padding:10px 10px 9px;border-radius:14px;overflow:hidden;
+        display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:auto auto minmax(0,1fr) auto;column-gap:10px;row-gap:3px;align-items:center}
+      #deuce-group-popup .dp-title{grid-column:1/-1;font-size:.8rem;letter-spacing:1px;line-height:1.2}
+      #deuce-group-popup .dp-sub{grid-column:1/-1;font-size:.64rem;letter-spacing:.3px;line-height:1.25;margin:0}
+      #deuce-group-popup #deuce-group-results{grid-column:1/-1;margin:3px 0 2px;gap:3px;max-height:none;min-height:0;overflow-y:auto;overflow-x:hidden}
+      #deuce-group-popup .dr-result{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:6px;padding:3px 6px;border-radius:6px}
+      #deuce-group-popup .dr-result-head{flex-direction:column;align-items:flex-start;gap:0;min-width:0}
+      #deuce-group-popup .dr-result-head span{font-size:.7rem;letter-spacing:.2px;line-height:1.2;overflow-wrap:anywhere}
+      #deuce-group-popup .dr-result-head b{font-size:.6rem;line-height:1.2;white-space:normal}
+      #deuce-group-popup .dr-result-cards{margin:0;gap:3px}
+      #deuce-group-popup .dr-result-card{min-width:22px;height:28px;padding:0 2px;font-size:.62rem;border-radius:3px}
+      #deuce-group-popup .dr-result-card.joker{font-size:.85rem}
+      #deuce-group-popup .dp-countdown{grid-column:1;justify-self:start;margin:0;font-size:1.05rem}
+      #deuce-group-popup .deuce-popup-box button{grid-column:2;margin:0;padding:5px 18px;font-size:.78rem;border-radius:10px}
+      @media (max-height:430px) and (min-width:480px){
+        #deuce-group-popup .deuce-popup-box{width:min(96%,620px)}
+        #deuce-group-popup #deuce-group-results{grid-template-columns:1fr 1fr}
+      }`;
+    document.head.appendChild(style);
+  })();
   // On the Deuce page: the TEENPATTI folder goes back to the Kalak page at /, and the page opens straight on the Deuce menu.
   window.openTeenpattiFolder = () => { location.href = '/'; };
   if (typeof window.openDeuceFolder === 'function') window.openDeuceFolder();
